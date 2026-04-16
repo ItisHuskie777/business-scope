@@ -1,0 +1,16 @@
+.DS_Store
+
+# data / outputs (don't commit)
+Project Files/
+Project Files Clean/
+*.csv
+*.json
+
+# server secrets & deps
+server/node_modules/
+server/config.json
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
