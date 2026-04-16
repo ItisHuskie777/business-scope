@@ -1,0 +1,9 @@
+{
+  "rds_host": "YOUR_RDS_HOSTNAME",
+  "rds_port": "5432",
+  "rds_user": "YOUR_USERNAME",
+  "rds_password": "YOUR_PASSWORD",
+  "rds_db": "postgres",
+  "server_host": "localhost",
+  "server_port": "8080"
+}
