@@ -59,7 +59,8 @@ const handleDbError = (err, res, fallbackMsg) => {
 
 
 // Route 1: GET /businesses
-
+// Corresponds to MS3 Query 1
+// Query params: postal_code (default 19104)
 const businesses = async (req, res) => {
   const text = `
     SELECT business_id, name, city, stars, categories
@@ -76,6 +77,8 @@ const businesses = async (req, res) => {
 };
 
 // Route 2: GET /postal_code_stats
+// Corresponds to MS3 Query 2
+// Query params: none
 const postalCodeStats = async (req, res) => {
   const text = `
     SELECT postal_code, AVG(stars) AS avg_business_rating, COUNT(*) AS business_count
@@ -94,6 +97,8 @@ const postalCodeStats = async (req, res) => {
 
 
 // Route 3: GET /city_business_stats
+// Corresponds to MS3 Query 3
+// Query params: none
 const cityBusinessStats = async (req, res) => {
   const text = `
     SELECT city, COUNT(*) AS num_businesses
@@ -110,37 +115,7 @@ const cityBusinessStats = async (req, res) => {
   }
 };
 
-
-// Route 4: GET /business_review_stats
-// Query params: page (default 1), limit (default 50, max 500)
-const businessReviewStats = async (req, res) => {
-  const page = clampInt(req.query.page, 1, 1, 100000);
-  const limit = clampInt(req.query.limit, 50, 1, 500);
-  const offset = (page - 1) * limit;
-
-  const text = `
-    SELECT b.name,
-           COUNT(r.review_id) AS total_reviews,
-           AVG(r.stars) AS avg_review_rating,
-           SUM(r.useful) AS total_useful,
-           SUM(r.funny) AS total_funny,
-           SUM(r.cool) AS total_cool
-    FROM business b
-    LEFT JOIN review r ON b.business_id = r.business_id
-    GROUP BY b.business_id, b.name
-    ORDER BY total_reviews DESC
-    LIMIT $1 OFFSET $2
-  `;
-
-  try {
-    const { rows } = await pool.query(text, [limit, offset]);
-    res.json({ page, limit, rows });
-  } catch (err) {
-    handleDbError(err, res, 'Failed to fetch business review stats');
-  }
-};
-
-// Route 5 (Complex): GET /high_rated_with_housing
+// Route 4: GET /high_rated_with_housing
 // Corresponds to MS3 Query 4
 // Query params: min_reviews (default 50), min_rating (default 4.0)
 const highRatedWithHousing = async (req, res) => {
@@ -178,6 +153,62 @@ const highRatedWithHousing = async (req, res) => {
   }
 };
 
+
+// Route 5 (Complex): GET /business_review_stats
+// Corresponds to MS3 Query 5
+// Query params: page, limit, min_reviews (default 50), top_n (default 5, max 50)
+const businessReviewStats = async (req, res) => {
+  const page = clampInt(req.query.page, 1, 1, 100000);
+  const limit = clampInt(req.query.limit, 50, 1, 500);
+  const offset = (page - 1) * limit;
+  const minReviews = clampInt(req.query.min_reviews, 50, 0, 100000);
+  const topN = clampInt(req.query.top_n, 5, 1, 50);
+
+  const text = `
+    WITH review_agg AS (
+      SELECT b.business_id,
+             b.name,
+             b.postal_code,
+             z.city,
+             COUNT(r.review_id) AS total_reviews,
+             AVG(r.stars)       AS avg_review_rating,
+             SUM(r.useful)      AS total_useful,
+             SUM(r.funny)       AS total_funny,
+             SUM(r.cool)        AS total_cool
+      FROM business b
+      JOIN review r ON b.business_id = r.business_id
+      JOIN zip_region z ON b.postal_code = z.postal_code
+      GROUP BY b.business_id, b.name, b.postal_code, z.city
+      HAVING COUNT(r.review_id) >= $1
+    ),
+    ranked AS (
+      SELECT ra.*,
+             RANK() OVER (PARTITION BY city ORDER BY total_reviews DESC) AS city_review_rank
+      FROM review_agg ra
+    )
+    SELECT business_id,
+           name,
+           postal_code,
+           city,
+           total_reviews,
+           avg_review_rating,
+           total_useful,
+           total_funny,
+           total_cool,
+           city_review_rank
+    FROM ranked
+    WHERE city_review_rank <= $2
+    ORDER BY city, city_review_rank, total_reviews DESC
+    LIMIT $3 OFFSET $4
+  `;
+
+  try {
+    const { rows } = await pool.query(text, [minReviews, topN, limit, offset]);
+    res.json({ page, limit, min_reviews: minReviews, top_n: topN, rows });
+  } catch (err) {
+    handleDbError(err, res, 'Failed to fetch business review stats');
+  }
+};
 
 // Route 6 (Complex): GET /top_business_per_zip
 // Corresponds to MS3 Query 6
