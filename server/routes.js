@@ -172,9 +172,9 @@ const businessReviewStats = async (req, res) => {
              z.city,
              COUNT(r.review_id) AS total_reviews,
              AVG(r.stars)       AS avg_review_rating,
-             SUM(r.useful)      AS total_useful,
-             SUM(r.funny)       AS total_funny,
-             SUM(r.cool)        AS total_cool
+             AVG(r.useful)      AS avg_useful,
+             AVG(r.funny)       AS avg_funny,
+             AVG(r.cool)        AS avg_cool
       FROM business b
       JOIN review r ON b.business_id = r.business_id
       JOIN zip_region z ON b.postal_code = z.postal_code
@@ -192,9 +192,9 @@ const businessReviewStats = async (req, res) => {
            city,
            total_reviews,
            avg_review_rating,
-           total_useful,
-           total_funny,
-           total_cool,
+           avg_useful,
+           avg_funny,
+           avg_cool,
            city_review_rank
     FROM ranked
     WHERE city_review_rank <= $2
