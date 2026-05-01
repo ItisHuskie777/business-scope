@@ -70,7 +70,7 @@ Or use DataGrip / pgAdmin with the following settings:
 | Port     | 5432                                                               |
 | Database | postgres                                                           |
 | Username | guest                                                              |
-| Password | 5500FINALPROJECT!!                                                 |
+| Password |                                                |
 
 The guest account has read-only (SELECT) access to all tables.
 
