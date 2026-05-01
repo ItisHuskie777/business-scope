@@ -1,0 +1,730 @@
+Timing is on.
+SET
+Time: 22.856 ms
+SET
+Time: 26.691 ms
+
+################################################################
+# BASELINE RUN — pre-optimization complex query timings        #
+################################################################
+
+--- table row counts (sanity check) ---
+  table_name   |  rows   
+---------------+---------
+ zip_region    |    4683
+ business      |  144789
+ review        | 5128678
+ housing_trend | 1115632
+(4 rows)
+
+Time: 24748.712 ms (00:24.749)
+
+================================================================
+Q4 — high_rated_with_housing  (min_reviews=50, min_rating=4.0)
+================================================================
+                                                                                               QUERY PLAN                                                                                                
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=1724408.83..1725830.72 rows=568754 width=97) (actual time=49040.041..49162.936 rows=8768 loops=1)
+   Output: b.business_id, b.name, b.postal_code, (count(r.review_id)), (avg(r.stars)), ht.zhvi_value
+   Sort Key: (avg(r.stars)) DESC
+   Sort Method: quicksort  Memory: 1234kB
+   Buffers: shared hit=9709 read=430625, temp read=119687 written=119850
+   I/O Timings: shared read=72317.308, temp read=37637.584 write=1299.606
+   ->  Finalize GroupAggregate  (cost=919252.15..1607834.22 rows=568754 width=97) (actual time=42041.630..49139.260 rows=8768 loops=1)
+         Output: b.business_id, b.name, b.postal_code, count(r.review_id), avg(r.stars), ht.zhvi_value
+         Group Key: b.business_id, ht.zhvi_value
+         Filter: ((count(r.review_id) >= 50) AND (avg(r.stars) > 4.0))
+         Rows Removed by Filter: 95740
+         Buffers: shared hit=9709 read=430625, temp read=119687 written=119850
+         I/O Timings: shared read=72317.308, temp read=37637.584 write=1299.606
+         ->  Gather Merge  (cost=919252.15..1464934.88 rows=4265652 width=97) (actual time=42036.689..48927.455 rows=305300 loops=1)
+               Output: b.business_id, ht.zhvi_value, b.name, b.postal_code, (PARTIAL count(r.review_id)), (PARTIAL avg(r.stars))
+               Workers Planned: 2
+               Workers Launched: 2
+               Buffers: shared hit=9709 read=430625, temp read=119687 written=119850
+               I/O Timings: shared read=72317.308, temp read=37637.584 write=1299.606
+               ->  Partial GroupAggregate  (cost=918252.13..971572.78 rows=2132826 width=97) (actual time=41418.111..45843.863 rows=101767 loops=3)
+                     Output: b.business_id, ht.zhvi_value, b.name, b.postal_code, PARTIAL count(r.review_id), PARTIAL avg(r.stars)
+                     Group Key: b.business_id, ht.zhvi_value
+                     Buffers: shared hit=9709 read=430625, temp read=119687 written=119850
+                     I/O Timings: shared read=72317.308, temp read=37637.584 write=1299.606
+                     Worker 0:  actual time=41240.343..45749.291 rows=101855 loops=1
+                       Buffers: shared hit=2366 read=143319, temp read=40274 written=40329
+                       I/O Timings: shared read=24081.838, temp read=12718.690 write=416.156
+                     Worker 1:  actual time=40996.436..45394.174 rows=101668 loops=1
+                       Buffers: shared hit=4385 read=138575, temp read=39511 written=39565
+                       I/O Timings: shared read=23920.265, temp read=12363.698 write=439.857
+                     ->  Sort  (cost=918252.13..923584.19 rows=2132826 width=85) (actual time=41414.138..45211.691 rows=1709559 loops=3)
+                           Output: b.business_id, ht.zhvi_value, b.name, b.postal_code, r.review_id, r.stars
+                           Sort Key: b.business_id, ht.zhvi_value
+                           Sort Method: external merge  Disk: 159632kB
+                           Buffers: shared hit=9709 read=430625, temp read=119687 written=119850
+                           I/O Timings: shared read=72317.308, temp read=37637.584 write=1299.606
+                           Worker 0:  actual time=41238.971..45110.140 rows=1725772 loops=1
+                             Sort Method: external merge  Disk: 161112kB
+                             Buffers: shared hit=2366 read=143319, temp read=40274 written=40329
+                             I/O Timings: shared read=24081.838, temp read=12718.690 write=416.156
+                           Worker 1:  actual time=40987.666..44776.866 rows=1693259 loops=1
+                             Sort Method: external merge  Disk: 158064kB
+                             Buffers: shared hit=4385 read=138575, temp read=39511 written=39565
+                             I/O Timings: shared read=23920.265, temp read=12363.698 write=439.857
+                           ->  Parallel Hash Join  (cost=45816.72..489925.89 rows=2132826 width=85) (actual time=1593.806..27192.430 rows=1709559 loops=3)
+                                 Output: b.business_id, ht.zhvi_value, b.name, b.postal_code, r.review_id, r.stars
+                                 Hash Cond: ((r.business_id)::text = (b.business_id)::text)
+                                 Buffers: shared hit=9679 read=430625
+                                 I/O Timings: shared read=72317.308
+                                 Worker 0:  actual time=1322.641..26921.383 rows=1725772 loops=1
+                                   Buffers: shared hit=2351 read=143319
+                                   I/O Timings: shared read=24081.838
+                                 Worker 1:  actual time=1321.798..26950.377 rows=1693259 loops=1
+                                   Buffers: shared hit=4370 read=138575
+                                   I/O Timings: shared read=23920.265
+                                 ->  Parallel Seq Scan on public.review r  (cost=0.00..427224.26 rows=2132826 width=51) (actual time=4.852..24339.691 rows=1709559 loops=3)
+                                       Output: r.review_id, r.business_id, r.stars, r.useful, r.funny, r.cool, r.text, r.review_date
+                                       Buffers: shared hit=3675 read=402221
+                                       I/O Timings: shared read=70568.176
+                                       Worker 0:  actual time=6.160..24335.639 rows=1725772 loops=1
+                                         Buffers: shared hit=1200 read=135376
+                                         I/O Timings: shared read=23507.715
+                                       Worker 1:  actual time=5.307..24386.054 rows=1693259 loops=1
+                                         Buffers: shared hit=1258 read=132584
+                                         I/O Timings: shared read=23544.697
+                                 ->  Parallel Hash  (cost=45062.61..45062.61 rows=60329 width=57) (actual time=1585.756..1587.250 rows=48263 loops=3)
+                                       Output: b.business_id, b.name, b.postal_code, ht.zhvi_value
+                                       Buckets: 262144  Batches: 1  Memory Usage: 14976kB
+                                       Buffers: shared hit=6004 read=28404
+                                       I/O Timings: shared read=1749.132
+                                       Worker 0:  actual time=1314.432..1316.147 rows=48118 loops=1
+                                         Buffers: shared hit=1151 read=7943
+                                         I/O Timings: shared read=574.123
+                                       Worker 1:  actual time=1314.397..1316.048 rows=49024 loops=1
+                                         Buffers: shared hit=3112 read=5991
+                                         I/O Timings: shared read=375.568
+                                       ->  Parallel Hash Left Join  (cost=38260.31..45062.61 rows=60329 width=57) (actual time=1174.759..1461.696 rows=48263 loops=3)
+                                             Output: b.business_id, b.name, b.postal_code, ht.zhvi_value
+                                             Hash Cond: ((b.postal_code)::text = (ht.postal_code)::text)
+                                             Buffers: shared hit=6004 read=28404
+                                             I/O Timings: shared read=1749.132
+                                             Worker 0:  actual time=903.512..1195.923 rows=48118 loops=1
+                                               Buffers: shared hit=1151 read=7943
+                                               I/O Timings: shared read=574.123
+                                             Worker 1:  actual time=903.921..1177.078 rows=49024 loops=1
+                                               Buffers: shared hit=3112 read=5991
+                                               I/O Timings: shared read=375.568
+                                             ->  Parallel Seq Scan on public.business b  (cost=0.00..6379.29 rows=60329 width=49) (actual time=5.312..234.807 rows=48263 loops=3)
+                                                   Output: b.business_id, b.name, b.address, b.city, b.state, b.postal_code, b.stars, b.is_open, b.categories, b.hours
+                                                   Buffers: shared read=5776
+                                                   I/O Timings: shared read=591.151
+                                                   Worker 0:  actual time=7.126..248.624 rows=48118 loops=1
+                                                     Buffers: shared read=1926
+                                                     I/O Timings: shared read=199.784
+                                                   Worker 1:  actual time=7.239..231.258 rows=49024 loops=1
+                                                     Buffers: shared read=1935
+                                                     I/O Timings: shared read=196.859
+                                             ->  Parallel Hash  (cost=38241.74..38241.74 rows=1485 width=14) (actual time=1169.372..1170.665 rows=1561 loops=3)
+                                                   Output: ht.zhvi_value, ht.postal_code
+                                                   Buckets: 8192 (originally 4096)  Batches: 1 (originally 1)  Memory Usage: 384kB
+                                                   Buffers: shared hit=6004 read=22628
+                                                   I/O Timings: shared read=1157.981
+                                                   Worker 0:  actual time=896.358..897.496 rows=3 loops=1
+                                                     Buffers: shared hit=1151 read=6017
+                                                     I/O Timings: shared read=374.340
+                                                   Worker 1:  actual time=896.599..898.244 rows=3 loops=1
+                                                     Buffers: shared hit=3112 read=4056
+                                                     I/O Timings: shared read=178.709
+                                                   ->  Hash Join  (cost=24000.83..38241.74 rows=1485 width=14) (actual time=796.960..1025.142 rows=1561 loops=3)
+                                                         Output: ht.zhvi_value, ht.postal_code
+                                                         Inner Unique: true
+                                                         Hash Cond: (((ht.postal_code)::text = (housing_trend.postal_code)::text) AND (ht.trend_date = (max(housing_trend.trend_date))))
+                                                         Buffers: shared hit=6004 read=22628
+                                                         I/O Timings: shared read=1157.981
+                                                         Worker 0:  actual time=890.785..892.621 rows=3 loops=1
+                                                           Buffers: shared hit=1151 read=6017
+                                                           I/O Timings: shared read=374.340
+                                                         Worker 1:  actual time=794.450..796.945 rows=3 loops=1
+                                                           Buffers: shared hit=3112 read=4056
+                                                           I/O Timings: shared read=178.709
+                                                         ->  Parallel Seq Scan on public.housing_trend ht  (cost=0.00..11800.47 rows=464847 width=18) (actual time=14.649..163.807 rows=371877 loops=3)
+                                                               Output: ht.postal_code, ht.trend_date, ht.zhvi_value
+                                                               Buffers: shared hit=1078 read=6074
+                                                               I/O Timings: shared read=308.492
+                                                               Worker 0:  actual time=21.063..23.488 rows=628 loops=1
+                                                                 Buffers: shared read=4
+                                                                 I/O Timings: shared read=21.561
+                                                               Worker 1:  actual time=21.513..22.796 rows=628 loops=1
+                                                                 Buffers: shared read=4
+                                                                 I/O Timings: shared read=22.098
+                                                         ->  Hash  (cost=23932.22..23932.22 rows=4574 width=10) (actual time=740.371..740.560 rows=4683 loops=3)
+                                                               Output: housing_trend.postal_code, (max(housing_trend.trend_date))
+                                                               Buckets: 8192  Batches: 1  Memory Usage: 266kB
+                                                               Buffers: shared hit=4902 read=16554
+                                                               I/O Timings: shared read=849.489
+                                                               Worker 0:  actual time=806.146..806.155 rows=4683 loops=1
+                                                                 Buffers: shared hit=1139 read=6013
+                                                                 I/O Timings: shared read=352.778
+                                                               Worker 1:  actual time=710.783..710.789 rows=4683 loops=1
+                                                                 Buffers: shared hit=3100 read=4052
+                                                                 I/O Timings: shared read=156.611
+                                                               ->  HashAggregate  (cost=23886.48..23932.22 rows=4574 width=10) (actual time=736.115..737.284 rows=4683 loops=3)
+                                                                     Output: housing_trend.postal_code, max(housing_trend.trend_date)
+                                                                     Group Key: housing_trend.postal_code
+                                                                     Batches: 1  Memory Usage: 721kB
+                                                                     Buffers: shared hit=4902 read=16554
+                                                                     I/O Timings: shared read=849.489
+                                                                     Worker 0:  actual time=801.991..802.978 rows=4683 loops=1
+                                                                       Batches: 1  Memory Usage: 721kB
+                                                                       Buffers: shared hit=1139 read=6013
+                                                                       I/O Timings: shared read=352.778
+                                                                     Worker 1:  actual time=705.229..706.194 rows=4683 loops=1
+                                                                       Batches: 1  Memory Usage: 721kB
+                                                                       Buffers: shared hit=3100 read=4052
+                                                                       I/O Timings: shared read=156.611
+                                                                     ->  Seq Scan on public.housing_trend  (cost=0.00..18308.32 rows=1115632 width=10) (actual time=2.906..462.811 rows=1115632 loops=3)
+                                                                           Output: housing_trend.postal_code, housing_trend.trend_date, housing_trend.zhvi_value
+                                                                           Buffers: shared hit=4902 read=16554
+                                                                           I/O Timings: shared read=849.489
+                                                                           Worker 0:  actual time=4.412..529.274 rows=1115632 loops=1
+                                                                             Buffers: shared hit=1139 read=6013
+                                                                             I/O Timings: shared read=352.778
+                                                                           Worker 1:  actual time=4.299..430.269 rows=1115632 loops=1
+                                                                             Buffers: shared hit=3100 read=4052
+                                                                             I/O Timings: shared read=156.611
+ Query Identifier: 8942870280748883945
+ Planning:
+   Buffers: shared hit=253 read=11
+   I/O Timings: shared read=8.651
+ Planning Time: 56.151 ms
+ Execution Time: 49188.382 ms
+(171 rows)
+
+Time: 45889.687 ms (00:45.890)
+
+================================================================
+Q5 — business_review_stats  (min_reviews=50, top_n=5, limit=50)
+================================================================
+                                                                                                        QUERY PLAN                                                                                                        
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=2026672.15..2026675.42 rows=50 width=131) (actual time=49470.619..49542.506 rows=50 loops=1)
+   Output: ra.business_id, ra.name, ra.postal_code, ra.city, ra.total_reviews, ra.avg_review_rating, ra.total_useful, ra.total_funny, ra.total_cool, (rank() OVER (?))
+   Buffers: shared hit=4124 read=407803, temp read=138530 written=138709
+   I/O Timings: shared read=67985.734, temp read=45562.693 write=1355.907
+   ->  Incremental Sort  (cost=2026672.15..2138356.35 rows=1706261 width=131) (actual time=49470.617..49542.496 rows=50 loops=1)
+         Output: ra.business_id, ra.name, ra.postal_code, ra.city, ra.total_reviews, ra.avg_review_rating, ra.total_useful, ra.total_funny, ra.total_cool, (rank() OVER (?))
+         Sort Key: ra.city, (rank() OVER (?)), ra.total_reviews DESC
+         Presorted Key: ra.city
+         Full-sort Groups: 2  Sort Method: quicksort  Average Memory: 31kB  Peak Memory: 31kB
+         Buffers: shared hit=4124 read=407803, temp read=138530 written=138709
+         I/O Timings: shared read=67985.734, temp read=45562.693 write=1355.907
+         ->  WindowAgg  (cost=2026218.12..2060343.32 rows=1706261 width=131) (actual time=49470.467..49542.434 rows=52 loops=1)
+               Output: ra.business_id, ra.name, ra.postal_code, ra.city, ra.total_reviews, ra.avg_review_rating, ra.total_useful, ra.total_funny, ra.total_cool, rank() OVER (?)
+               Run Condition: (rank() OVER (?) <= 5)
+               Buffers: shared hit=4121 read=407803, temp read=138530 written=138709
+               I/O Timings: shared read=67985.734, temp read=45562.693 write=1355.907
+               ->  Sort  (cost=2026218.10..2030483.75 rows=1706261 width=123) (actual time=49469.576..49541.461 rows=302 loops=1)
+                     Output: ra.city, ra.total_reviews, ra.business_id, ra.name, ra.postal_code, ra.avg_review_rating, ra.total_useful, ra.total_funny, ra.total_cool
+                     Sort Key: ra.city, ra.total_reviews DESC
+                     Sort Method: quicksort  Memory: 3352kB
+                     Buffers: shared hit=4121 read=407803, temp read=138530 written=138709
+                     I/O Timings: shared read=67985.734, temp read=45562.693 write=1355.907
+                     ->  Subquery Scan on ra  (cost=904205.85..1627979.55 rows=1706261 width=123) (actual time=41815.025..49499.370 rows=21704 loops=1)
+                           Output: ra.city, ra.total_reviews, ra.business_id, ra.name, ra.postal_code, ra.avg_review_rating, ra.total_useful, ra.total_funny, ra.total_cool
+                           Buffers: shared hit=4121 read=407803, temp read=138530 written=138709
+                           I/O Timings: shared read=67985.734, temp read=45562.693 write=1355.907
+                           ->  Finalize GroupAggregate  (cost=904205.85..1627979.55 rows=1706261 width=123) (actual time=41815.024..49495.138 rows=21704 loops=1)
+                                 Output: b.business_id, b.name, b.postal_code, z.city, count(r.review_id), avg(r.stars), sum(r.useful), sum(r.funny), sum(r.cool)
+                                 Group Key: b.business_id, z.city
+                                 Filter: (count(r.review_id) >= 50)
+                                 Rows Removed by Filter: 81724
+                                 Buffers: shared hit=4121 read=407803, temp read=138530 written=138709
+                                 I/O Timings: shared read=67985.734, temp read=45562.693 write=1355.907
+                                 ->  Gather Merge  (cost=904205.85..1465884.78 rows=4265652 width=123) (actual time=41813.896..49266.717 rows=302057 loops=1)
+                                       Output: b.business_id, z.city, b.name, b.postal_code, (PARTIAL count(r.review_id)), (PARTIAL avg(r.stars)), (PARTIAL sum(r.useful)), (PARTIAL sum(r.funny)), (PARTIAL sum(r.cool))
+                                       Workers Planned: 2
+                                       Workers Launched: 2
+                                       Buffers: shared hit=4121 read=407803, temp read=138530 written=138709
+                                       I/O Timings: shared read=67985.734, temp read=45562.693 write=1355.907
+                                       ->  Partial GroupAggregate  (cost=903205.83..972522.68 rows=2132826 width=123) (actual time=41786.160..46543.186 rows=100686 loops=3)
+                                             Output: b.business_id, z.city, b.name, b.postal_code, PARTIAL count(r.review_id), PARTIAL avg(r.stars), PARTIAL sum(r.useful), PARTIAL sum(r.funny), PARTIAL sum(r.cool)
+                                             Group Key: b.business_id, z.city
+                                             Buffers: shared hit=4121 read=407803, temp read=138530 written=138709
+                                             I/O Timings: shared read=67985.734, temp read=45562.693 write=1355.907
+                                             Worker 0:  actual time=41770.099..46627.751 rows=100705 loops=1
+                                               Buffers: shared hit=1591 read=136366, temp read=46361 written=46421
+                                               I/O Timings: shared read=22680.021, temp read=15274.407 write=444.644
+                                             Worker 1:  actual time=41787.422..46514.083 rows=100675 loops=1
+                                               Buffers: shared hit=1266 read=135274, temp read=45929 written=45988
+                                               I/O Timings: shared read=22590.151, temp read=15192.051 write=457.685
+                                             ->  Sort  (cost=903205.83..908537.90 rows=2132826 width=99) (actual time=41783.297..45872.100 rows=1695784 loops=3)
+                                                   Output: b.business_id, z.city, b.name, b.postal_code, r.review_id, r.stars, r.useful, r.funny, r.cool
+                                                   Sort Key: b.business_id, z.city
+                                                   Sort Method: external merge  Disk: 184976kB
+                                                   Buffers: shared hit=4121 read=407803, temp read=138530 written=138709
+                                                   I/O Timings: shared read=67985.734, temp read=45562.693 write=1355.907
+                                                   Worker 0:  actual time=41761.608..45957.292 rows=1702661 loops=1
+                                                     Sort Method: external merge  Disk: 185464kB
+                                                     Buffers: shared hit=1591 read=136366, temp read=46361 written=46421
+                                                     I/O Timings: shared read=22680.021, temp read=15274.407 write=444.644
+                                                   Worker 1:  actual time=41787.377..45868.922 rows=1686590 loops=1
+                                                     Sort Method: external merge  Disk: 183736kB
+                                                     Buffers: shared hit=1266 read=135274, temp read=45929 written=45988
+                                                     I/O Timings: shared read=22590.151, temp read=15192.051 write=457.685
+                                                   ->  Hash Join  (cost=7290.77..445717.59 rows=2132826 width=99) (actual time=219.012..25368.019 rows=1695784 loops=3)
+                                                         Output: b.business_id, z.city, b.name, b.postal_code, r.review_id, r.stars, r.useful, r.funny, r.cool
+                                                         Inner Unique: true
+                                                         Hash Cond: ((b.postal_code)::text = (z.postal_code)::text)
+                                                         Buffers: shared hit=4047 read=407803
+                                                         I/O Timings: shared read=67985.734
+                                                         Worker 0:  actual time=214.896..25426.374 rows=1702661 loops=1
+                                                           Buffers: shared hit=1554 read=136366
+                                                           I/O Timings: shared read=22680.021
+                                                         Worker 1:  actual time=214.747..25291.464 rows=1686590 loops=1
+                                                           Buffers: shared hit=1229 read=135274
+                                                           I/O Timings: shared read=22590.151
+                                                         ->  Parallel Hash Join  (cost=7133.40..439956.49 rows=2132826 width=89) (actual time=206.718..24637.253 rows=1709559 loops=3)
+                                                               Output: b.business_id, b.name, b.postal_code, r.review_id, r.stars, r.useful, r.funny, r.cool
+                                                               Inner Unique: true
+                                                               Hash Cond: ((r.business_id)::text = (b.business_id)::text)
+                                                               Buffers: shared hit=3869 read=407803
+                                                               I/O Timings: shared read=67985.734
+                                                               Worker 0:  actual time=206.802..24683.735 rows=1716458 loops=1
+                                                                 Buffers: shared hit=1491 read=136366
+                                                                 I/O Timings: shared read=22680.021
+                                                               Worker 1:  actual time=206.719..24569.575 rows=1700326 loops=1
+                                                                 Buffers: shared hit=1166 read=135274
+                                                                 I/O Timings: shared read=22590.151
+                                                               ->  Parallel Seq Scan on public.review r  (cost=0.00..427224.26 rows=2132826 width=63) (actual time=1.378..23196.169 rows=1709559 loops=3)
+                                                                     Output: r.review_id, r.business_id, r.stars, r.useful, r.funny, r.cool, r.text, r.review_date
+                                                                     Buffers: shared hit=3771 read=402125
+                                                                     I/O Timings: shared read=67477.976
+                                                                     Worker 0:  actual time=1.428..23214.855 rows=1716458 loops=1
+                                                                       Buffers: shared hit=1422 read=134319
+                                                                       I/O Timings: shared read=22512.204
+                                                                     Worker 1:  actual time=1.360..23138.254 rows=1700326 loops=1
+                                                                       Buffers: shared hit=1161 read=133469
+                                                                       I/O Timings: shared read=22419.975
+                                                               ->  Parallel Hash  (cost=6379.29..6379.29 rows=60329 width=49) (actual time=204.824..205.397 rows=48263 loops=3)
+                                                                     Output: b.business_id, b.name, b.postal_code
+                                                                     Buckets: 262144  Batches: 1  Memory Usage: 14080kB
+                                                                     Buffers: shared hit=98 read=5678
+                                                                     I/O Timings: shared read=507.758
+                                                                     Worker 0:  actual time=204.110..204.949 rows=53626 loops=1
+                                                                       Buffers: shared hit=69 read=2047
+                                                                       I/O Timings: shared read=167.817
+                                                                     Worker 1:  actual time=205.289..206.163 rows=45496 loops=1
+                                                                       Buffers: shared hit=5 read=1805
+                                                                       I/O Timings: shared read=170.176
+                                                                     ->  Parallel Seq Scan on public.business b  (cost=0.00..6379.29 rows=60329 width=49) (actual time=1.275..180.951 rows=48263 loops=3)
+                                                                           Output: b.business_id, b.name, b.postal_code
+                                                                           Buffers: shared hit=98 read=5678
+                                                                           I/O Timings: shared read=507.758
+                                                                           Worker 0:  actual time=1.031..180.733 rows=53626 loops=1
+                                                                             Buffers: shared hit=69 read=2047
+                                                                             I/O Timings: shared read=167.817
+                                                                           Worker 1:  actual time=1.627..181.322 rows=45496 loops=1
+                                                                             Buffers: shared hit=5 read=1805
+                                                                             I/O Timings: shared read=170.176
+                                                         ->  Hash  (cost=98.83..98.83 rows=4683 width=16) (actual time=11.430..11.431 rows=4683 loops=3)
+                                                               Output: z.city, z.postal_code
+                                                               Buckets: 8192  Batches: 1  Memory Usage: 283kB
+                                                               Buffers: shared hit=156
+                                                               Worker 0:  actual time=8.047..8.048 rows=4683 loops=1
+                                                                 Buffers: shared hit=52
+                                                               Worker 1:  actual time=7.963..7.964 rows=4683 loops=1
+                                                                 Buffers: shared hit=52
+                                                               ->  Seq Scan on public.zip_region z  (cost=0.00..98.83 rows=4683 width=16) (actual time=0.256..7.383 rows=4683 loops=3)
+                                                                     Output: z.city, z.postal_code
+                                                                     Buffers: shared hit=156
+                                                                     Worker 0:  actual time=0.045..7.047 rows=4683 loops=1
+                                                                       Buffers: shared hit=52
+                                                                     Worker 1:  actual time=0.049..6.747 rows=4683 loops=1
+                                                                       Buffers: shared hit=52
+ Query Identifier: 6830040147405304908
+ Planning:
+   Buffers: shared hit=50 read=2
+   I/O Timings: shared read=3.925
+ Planning Time: 18.444 ms
+ Execution Time: 49548.986 ms
+(140 rows)
+
+Time: 46616.715 ms (00:46.617)
+
+================================================================
+Q6 — top_business_per_zip  (limit=100)
+================================================================
+                                                                                             QUERY PLAN                                                                                             
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=822795.19..822795.44 rows=100 width=34) (actual time=30523.095..30528.992 rows=100 loops=1)
+   Output: t.postal_code, t.name, t.review_count
+   Buffers: shared hit=4077 read=407611, temp read=30220 written=50040
+   I/O Timings: shared read=74257.324, temp read=4748.241 write=802.760
+   ->  Sort  (cost=822795.19..822797.00 rows=724 width=34) (actual time=30523.083..30528.965 rows=100 loops=1)
+         Output: t.postal_code, t.name, t.review_count
+         Sort Key: t.review_count DESC
+         Sort Method: top-N heapsort  Memory: 32kB
+         Buffers: shared hit=4077 read=407611, temp read=30220 written=50040
+         I/O Timings: shared read=74257.324, temp read=4748.241 write=802.760
+         ->  Subquery Scan on t  (cost=818061.90..822767.52 rows=724 width=34) (actual time=30430.370..30521.814 rows=40412 loops=1)
+               Output: t.postal_code, t.name, t.review_count
+               Filter: (t.rnk = 1)
+               Buffers: shared hit=4077 read=407611, temp read=30220 written=50040
+               I/O Timings: shared read=74257.324, temp read=4748.241 write=802.760
+               ->  WindowAgg  (cost=818061.90..820957.66 rows=144789 width=65) (actual time=30430.368..30516.572 rows=40412 loops=1)
+                     Output: b.postal_code, b.name, (count(r.review_id)), rank() OVER (?), b.business_id
+                     Run Condition: (rank() OVER (?) <= 1)
+                     Buffers: shared hit=4077 read=407611, temp read=30220 written=50040
+                     I/O Timings: shared read=74257.324, temp read=4748.241 write=802.760
+                     ->  Sort  (cost=818061.88..818423.85 rows=144789 width=57) (actual time=30430.347..30482.104 rows=144789 loops=1)
+                           Output: b.postal_code, (count(r.review_id)), b.business_id, b.name
+                           Sort Key: b.postal_code, (count(r.review_id)) DESC
+                           Sort Method: external merge  Disk: 9808kB
+                           Buffers: shared hit=4077 read=407611, temp read=30220 written=50040
+                           I/O Timings: shared read=74257.324, temp read=4748.241 write=802.760
+                           ->  Finalize GroupAggregate  (cost=763522.62..800204.86 rows=144789 width=57) (actual time=29855.363..30148.004 rows=144789 loops=1)
+                                 Output: b.postal_code, count(r.review_id), b.business_id, b.name
+                                 Group Key: b.business_id
+                                 Buffers: shared hit=4077 read=407611, temp read=28994 written=48811
+                                 I/O Timings: shared read=74257.324, temp read=4733.227 write=785.701
+                                 ->  Gather Merge  (cost=763522.62..797309.08 rows=289578 width=57) (actual time=29855.344..30064.015 rows=345614 loops=1)
+                                       Output: b.business_id, b.postal_code, (PARTIAL count(r.review_id)), b.name
+                                       Workers Planned: 2
+                                       Workers Launched: 2
+                                       Buffers: shared hit=4077 read=407611, temp read=28994 written=48811
+                                       I/O Timings: shared read=74257.324, temp read=4733.227 write=785.701
+                                       ->  Sort  (cost=762522.60..762884.57 rows=144789 width=57) (actual time=29683.240..29757.830 rows=115205 loops=3)
+                                             Output: b.business_id, b.postal_code, (PARTIAL count(r.review_id)), b.name
+                                             Sort Key: b.business_id
+                                             Sort Method: external merge  Disk: 6976kB
+                                             Buffers: shared hit=4077 read=407611, temp read=28994 written=48811
+                                             I/O Timings: shared read=74257.324, temp read=4733.227 write=785.701
+                                             Worker 0:  actual time=29631.697..29691.592 rows=101729 loops=1
+                                               Sort Method: external merge  Disk: 6976kB
+                                               Buffers: shared hit=1517 read=134798, temp read=9067 written=15327
+                                               I/O Timings: shared read=24737.013, temp read=1561.615 write=254.734
+                                             Worker 1:  actual time=29829.801..29934.865 rows=142120 loops=1
+                                               Sort Method: external merge  Disk: 9752kB
+                                               Buffers: shared hit=1278 read=135733, temp read=10812 written=18110
+                                               I/O Timings: shared read=24742.811, temp read=1667.553 write=287.372
+                                             ->  Partial HashAggregate  (cost=693229.58..744665.58 rows=144789 width=57) (actual time=27514.128..29310.042 rows=115205 loops=3)
+                                                   Output: b.business_id, b.postal_code, PARTIAL count(r.review_id), b.name
+                                                   Group Key: b.business_id
+                                                   Planned Partitions: 4  Batches: 5  Memory Usage: 9521kB  Disk Usage: 66624kB
+                                                   Buffers: shared hit=4061 read=407611, temp read=26031 written=45841
+                                                   I/O Timings: shared read=74257.324, temp read=4546.912 write=747.852
+                                                   Worker 0:  actual time=27493.620..29238.679 rows=101729 loops=1
+                                                     Batches: 5  Memory Usage: 9521kB  Disk Usage: 66576kB
+                                                     Buffers: shared hit=1509 read=134798, temp read=8195 written=14453
+                                                     I/O Timings: shared read=24737.013, temp read=1485.807 write=244.927
+                                                   Worker 1:  actual time=27528.109..29471.877 rows=142120 loops=1
+                                                     Batches: 5  Memory Usage: 9265kB  Disk Usage: 77752kB
+                                                     Buffers: shared hit=1270 read=135733, temp read=9593 written=16888
+                                                     I/O Timings: shared read=24742.811, temp read=1619.062 write=269.640
+                                                   ->  Parallel Hash Right Join  (cost=7133.40..439956.49 rows=2132826 width=72) (actual time=199.850..26367.935 rows=1722986 loops=3)
+                                                         Output: b.business_id, b.postal_code, b.name, r.review_id
+                                                         Inner Unique: true
+                                                         Hash Cond: ((r.business_id)::text = (b.business_id)::text)
+                                                         Buffers: shared hit=4061 read=407611
+                                                         I/O Timings: shared read=74257.324
+                                                         Worker 0:  actual time=190.132..26338.443 rows=1701627 loops=1
+                                                           Buffers: shared hit=1509 read=134798
+                                                           I/O Timings: shared read=24737.013
+                                                         Worker 1:  actual time=192.224..26365.449 rows=1749946 loops=1
+                                                           Buffers: shared hit=1270 read=135733
+                                                           I/O Timings: shared read=24742.811
+                                                         ->  Parallel Seq Scan on public.review r  (cost=0.00..427224.26 rows=2132826 width=46) (actual time=2.069..25089.656 rows=1709559 loops=3)
+                                                               Output: r.review_id, r.business_id, r.stars, r.useful, r.funny, r.cool, r.text, r.review_date
+                                                               Buffers: shared hit=3867 read=402029
+                                                               I/O Timings: shared read=73767.460
+                                                               Worker 0:  actual time=2.137..25065.911 rows=1701627 loops=1
+                                                                 Buffers: shared hit=1498 read=133199
+                                                                 I/O Timings: shared read=24579.179
+                                                               Worker 1:  actual time=2.002..25099.695 rows=1709665 loops=1
+                                                                 Buffers: shared hit=1171 read=134044
+                                                                 I/O Timings: shared read=24584.307
+                                                         ->  Parallel Hash  (cost=6379.29..6379.29 rows=60329 width=49) (actual time=197.321..197.324 rows=48263 loops=3)
+                                                               Output: b.postal_code, b.name, b.business_id
+                                                               Buckets: 262144  Batches: 1  Memory Usage: 14048kB
+                                                               Buffers: shared hit=194 read=5582
+                                                               I/O Timings: shared read=489.864
+                                                               Worker 0:  actual time=187.914..187.917 rows=40570 loops=1
+                                                                 Buffers: shared hit=11 read=1599
+                                                                 I/O Timings: shared read=157.833
+                                                               Worker 1:  actual time=190.117..190.121 rows=44363 loops=1
+                                                                 Buffers: shared hit=99 read=1689
+                                                                 I/O Timings: shared read=158.504
+                                                               ->  Parallel Seq Scan on public.business b  (cost=0.00..6379.29 rows=60329 width=49) (actual time=0.784..175.118 rows=48263 loops=3)
+                                                                     Output: b.postal_code, b.name, b.business_id
+                                                                     Buffers: shared hit=194 read=5582
+                                                                     I/O Timings: shared read=489.864
+                                                                     Worker 0:  actual time=1.122..167.867 rows=40570 loops=1
+                                                                       Buffers: shared hit=11 read=1599
+                                                                       I/O Timings: shared read=157.833
+                                                                     Worker 1:  actual time=0.053..169.513 rows=44363 loops=1
+                                                                       Buffers: shared hit=99 read=1689
+                                                                       I/O Timings: shared read=158.504
+ Query Identifier: 8377248616601910884
+ Planning:
+   Buffers: shared hit=18
+ Planning Time: 0.412 ms
+ Execution Time: 30536.561 ms
+(113 rows)
+
+Time: 28188.408 ms (00:28.188)
+
+================================================================
+Q11 — opportunity_score  (min_businesses=10)
+================================================================
+                                                                                                              QUERY PLAN                                                                                                              
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=1438884.99..1441173.61 rows=915451 width=152) (actual time=41772.160..41846.747 rows=407 loops=1)
+   Output: b.postal_code, z.city, (count(DISTINCT b.business_id)), (round(avg(b.stars), 2)), (round(avg(r.stars), 2)), (max(housing_trend.zhvi_value)), (round((max(housing_trend.zhvi_value) - min(housing_trend_1.zhvi_value)), 2))
+   Sort Key: (round(avg(r.stars), 2)) DESC
+   Sort Method: quicksort  Memory: 55kB
+   Buffers: shared hit=22544 read=419938, temp read=86396 written=86518
+   I/O Timings: shared read=67140.813, temp read=18113.593 write=775.498
+   InitPlan 1
+     ->  Finalize Aggregate  (cost=13962.80..13962.81 rows=1 width=4) (actual time=449.438..454.303 rows=1 loops=1)
+           Output: max(housing_trend_2.trend_date)
+           Buffers: shared hit=943 read=6209
+           I/O Timings: shared read=825.938
+           ->  Gather  (cost=13962.58..13962.79 rows=2 width=4) (actual time=449.420..454.288 rows=3 loops=1)
+                 Output: (PARTIAL max(housing_trend_2.trend_date))
+                 Workers Planned: 2
+                 Workers Launched: 2
+                 Buffers: shared hit=943 read=6209
+                 I/O Timings: shared read=825.938
+                 ->  Partial Aggregate  (cost=12962.58..12962.59 rows=1 width=4) (actual time=432.067..432.068 rows=1 loops=3)
+                       Output: PARTIAL max(housing_trend_2.trend_date)
+                       Buffers: shared hit=943 read=6209
+                       I/O Timings: shared read=825.938
+                       Worker 0:  actual time=423.975..423.975 rows=1 loops=1
+                         Buffers: shared hit=346 read=2073
+                         I/O Timings: shared read=274.458
+                       Worker 1:  actual time=424.091..424.091 rows=1 loops=1
+                         Buffers: shared hit=287 read=2035
+                         I/O Timings: shared read=269.330
+                       ->  Parallel Seq Scan on public.housing_trend housing_trend_2  (cost=0.00..11800.47 rows=464847 width=4) (actual time=1.486..357.541 rows=371877 loops=3)
+                             Output: housing_trend_2.postal_code, housing_trend_2.trend_date, housing_trend_2.zhvi_value
+                             Buffers: shared hit=943 read=6209
+                             I/O Timings: shared read=825.938
+                             Worker 0:  actual time=1.707..351.315 rows=374131 loops=1
+                               Buffers: shared hit=346 read=2073
+                               I/O Timings: shared read=274.458
+                             Worker 1:  actual time=1.751..351.880 rows=363602 loops=1
+                               Buffers: shared hit=287 read=2035
+                               I/O Timings: shared read=269.330
+   InitPlan 2
+     ->  Finalize Aggregate  (cost=13962.80..13962.81 rows=1 width=4) (actual time=355.262..355.346 rows=1 loops=1)
+           Output: min(housing_trend_3.trend_date)
+           Buffers: shared hit=1040 read=6112
+           I/O Timings: shared read=841.411
+           ->  Gather  (cost=13962.58..13962.79 rows=2 width=4) (actual time=353.358..355.331 rows=3 loops=1)
+                 Output: (PARTIAL min(housing_trend_3.trend_date))
+                 Workers Planned: 2
+                 Workers Launched: 2
+                 Buffers: shared hit=1040 read=6112
+                 I/O Timings: shared read=841.411
+                 ->  Partial Aggregate  (cost=12962.58..12962.59 rows=1 width=4) (actual time=347.382..347.383 rows=1 loops=3)
+                       Output: PARTIAL min(housing_trend_3.trend_date)
+                       Buffers: shared hit=1040 read=6112
+                       I/O Timings: shared read=841.411
+                       Worker 0:  actual time=344.631..344.632 rows=1 loops=1
+                         Buffers: shared hit=324 read=2045
+                         I/O Timings: shared read=279.245
+                       Worker 1:  actual time=344.427..344.428 rows=1 loops=1
+                         Buffers: shared hit=282 read=2054
+                         I/O Timings: shared read=279.313
+                       ->  Parallel Seq Scan on public.housing_trend housing_trend_3  (cost=0.00..11800.47 rows=464847 width=4) (actual time=0.946..311.716 rows=371877 loops=3)
+                             Output: housing_trend_3.postal_code, housing_trend_3.trend_date, housing_trend_3.zhvi_value
+                             Buffers: shared hit=1040 read=6112
+                             I/O Timings: shared read=841.411
+                             Worker 0:  actual time=0.498..309.857 rows=366909 loops=1
+                               Buffers: shared hit=324 read=2045
+                               I/O Timings: shared read=279.245
+                             Worker 1:  actual time=1.183..309.895 rows=366124 loops=1
+                               Buffers: shared hit=282 read=2054
+                               I/O Timings: shared read=279.313
+   ->  GroupAggregate  (cost=705187.09..1182634.85 rows=915451 width=152) (actual time=34345.957..41840.985 rows=407 loops=1)
+         Output: b.postal_code, z.city, count(DISTINCT b.business_id), round(avg(b.stars), 2), round(avg(r.stars), 2), max(housing_trend.zhvi_value), round((max(housing_trend.zhvi_value) - min(housing_trend_1.zhvi_value)), 2)
+         Group Key: b.postal_code, z.city
+         Filter: (count(DISTINCT b.business_id) >= 10)
+         Rows Removed by Filter: 53
+         Buffers: shared hit=22544 read=419938, temp read=86396 written=86518
+         I/O Timings: shared read=67140.813, temp read=18113.593 write=775.498
+         ->  Gather Merge  (cost=705187.09..1070524.39 rows=3136845 width=65) (actual time=34345.229..39875.038 rows=4452906 loops=1)
+               Output: b.postal_code, z.city, b.business_id, b.stars, r.stars, housing_trend.zhvi_value, housing_trend_1.zhvi_value
+               Workers Planned: 2
+               Workers Launched: 2
+               Buffers: shared hit=22544 read=419938, temp read=86396 written=86518
+               I/O Timings: shared read=67140.813, temp read=18113.593 write=775.498
+               ->  Sort  (cost=704187.07..707454.62 rows=1307019 width=65) (actual time=33324.746..35427.898 rows=1484302 loops=3)
+                     Output: b.postal_code, z.city, b.business_id, b.stars, r.stars, housing_trend.zhvi_value, housing_trend_1.zhvi_value
+                     Sort Key: b.postal_code, z.city, b.business_id
+                     Sort Method: external merge  Disk: 115272kB
+                     Buffers: shared hit=20561 read=407617, temp read=86396 written=86518
+                     I/O Timings: shared read=65473.464, temp read=18113.593 write=775.498
+                     Worker 0:  actual time=33525.091..35602.177 rows=1475844 loops=1
+                       Sort Method: external merge  Disk: 114560kB
+                       Buffers: shared hit=6904 read=135199, temp read=28634 written=28674
+                       I/O Timings: shared read=21873.043, temp read=6183.594 write=246.014
+                     Worker 1:  actual time=33377.600..35508.931 rows=1491931 loops=1
+                       Sort Method: external merge  Disk: 115824kB
+                       Buffers: shared hit=6889 read=136397, temp read=28949 written=28990
+                       I/O Timings: shared read=21825.588, temp read=6091.800 write=256.306
+                     ->  Parallel Hash Join  (cost=23520.74..464189.00 rows=1307019 width=65) (actual time=363.063..23606.317 rows=1484302 loops=3)
+                           Output: b.postal_code, z.city, b.business_id, b.stars, r.stars, housing_trend.zhvi_value, housing_trend_1.zhvi_value
+                           Hash Cond: ((r.business_id)::text = (b.business_id)::text)
+                           Buffers: shared hit=20545 read=407617
+                           I/O Timings: shared read=65473.464
+                           Worker 0:  actual time=358.809..23645.051 rows=1475844 loops=1
+                             Buffers: shared hit=6896 read=135199
+                             I/O Timings: shared read=21873.043
+                           Worker 1:  actual time=358.460..23598.395 rows=1491931 loops=1
+                             Buffers: shared hit=6881 read=136397
+                             I/O Timings: shared read=21825.588
+                           ->  Parallel Seq Scan on public.review r  (cost=0.00..427224.26 rows=2132826 width=28) (actual time=1.642..22083.454 rows=1709559 loops=3)
+                                 Output: r.review_id, r.business_id, r.stars, r.useful, r.funny, r.cool, r.text, r.review_date
+                                 Buffers: shared hit=3963 read=401933
+                                 I/O Timings: shared read=64865.119
+                                 Worker 0:  actual time=1.760..22128.380 rows=1699758 loops=1
+                                   Buffers: shared hit=1263 read=133186
+                                   I/O Timings: shared read=21675.618
+                                 Worker 1:  actual time=1.580..22092.372 rows=1717750 loops=1
+                                   Buffers: shared hit=1295 read=134501
+                                   I/O Timings: shared read=21629.029
+                           ->  Parallel Hash  (cost=23058.62..23058.62 rows=36970 width=60) (actual time=360.576..360.588 rows=29669 loops=3)
+                                 Output: b.postal_code, b.business_id, b.stars, z.city, housing_trend.zhvi_value, housing_trend_1.zhvi_value
+                                 Buckets: 131072  Batches: 1  Memory Usage: 9728kB
+                                 Buffers: shared hit=16582 read=5684
+                                 I/O Timings: shared read=608.345
+                                 Worker 0:  actual time=357.018..357.028 rows=32079 loops=1
+                                   Buffers: shared hit=5633 read=2013
+                                   I/O Timings: shared read=197.425
+                                 Worker 1:  actual time=356.678..356.691 rows=31037 loops=1
+                                   Buffers: shared hit=5586 read=1896
+                                   I/O Timings: shared read=196.559
+                                 ->  Hash Join  (cost=158.24..23058.62 rows=36970 width=60) (actual time=3.946..344.990 rows=29669 loops=3)
+                                       Output: b.postal_code, b.business_id, b.stars, z.city, housing_trend.zhvi_value, housing_trend_1.zhvi_value
+                                       Inner Unique: true
+                                       Hash Cond: ((b.postal_code)::text = (z.postal_code)::text)
+                                       Buffers: shared hit=16582 read=5684
+                                       I/O Timings: shared read=608.345
+                                       Worker 0:  actual time=3.430..340.001 rows=32079 loops=1
+                                         Buffers: shared hit=5633 read=2013
+                                         I/O Timings: shared read=197.425
+                                       Worker 1:  actual time=3.104..339.943 rows=31037 loops=1
+                                         Buffers: shared hit=5586 read=1896
+                                         I/O Timings: shared read=196.559
+                                       ->  Nested Loop  (cost=0.88..22804.12 rows=36970 width=62) (actual time=2.065..332.056 rows=29669 loops=3)
+                                             Output: b.postal_code, b.business_id, b.stars, housing_trend.zhvi_value, housing_trend.postal_code, housing_trend_1.zhvi_value, housing_trend_1.postal_code
+                                             Inner Unique: true
+                                             Buffers: shared hit=16426 read=5684
+                                             I/O Timings: shared read=608.345
+                                             Worker 0:  actual time=1.453..326.324 rows=32079 loops=1
+                                               Buffers: shared hit=5581 read=2013
+                                               I/O Timings: shared read=197.425
+                                             Worker 1:  actual time=1.103..326.382 rows=31037 loops=1
+                                               Buffers: shared hit=5534 read=1896
+                                               I/O Timings: shared read=196.559
+                                             ->  Nested Loop  (cost=0.44..14755.46 rows=47227 width=48) (actual time=2.037..266.227 rows=34481 loops=3)
+                                                   Output: b.postal_code, b.business_id, b.stars, housing_trend.zhvi_value, housing_trend.postal_code
+                                                   Inner Unique: true
+                                                   Buffers: shared hit=10425 read=5605
+                                                   I/O Timings: shared read=560.308
+                                                   Worker 0:  actual time=1.419..268.529 rows=37385 loops=1
+                                                     Buffers: shared hit=3569 read=1992
+                                                     I/O Timings: shared read=186.764
+                                                   Worker 1:  actual time=1.074..262.195 rows=35985 loops=1
+                                                     Buffers: shared hit=3534 read=1870
+                                                     I/O Timings: shared read=184.321
+                                                   ->  Parallel Seq Scan on public.business b  (cost=0.00..6379.29 rows=60329 width=34) (actual time=0.970..171.517 rows=48263 loops=3)
+                                                         Output: b.business_id, b.name, b.address, b.city, b.state, b.postal_code, b.stars, b.is_open, b.categories, b.hours
+                                                         Buffers: shared hit=292 read=5484
+                                                         I/O Timings: shared read=489.071
+                                                         Worker 0:  actual time=1.344..169.301 rows=52314 loops=1
+                                                           Buffers: shared hit=140 read=1952
+                                                           I/O Timings: shared read=160.341
+                                                         Worker 1:  actual time=0.527..173.101 rows=50208 loops=1
+                                                           Buffers: shared hit=150 read=1830
+                                                           I/O Timings: shared read=164.284
+                                                   ->  Memoize  (cost=0.44..7.60 rows=1 width=14) (actual time=0.002..0.002 rows=1 loops=144789)
+                                                         Output: housing_trend.zhvi_value, housing_trend.postal_code
+                                                         Cache Key: b.postal_code
+                                                         Cache Mode: logical
+                                                         Hits: 41323  Misses: 944  Evictions: 0  Overflows: 0  Memory Usage: 89kB
+                                                         Buffers: shared hit=10133 read=121
+                                                         I/O Timings: shared read=71.236
+                                                         Worker 0:  actual time=0.002..0.002 rows=1 loops=52314
+                                                           Hits: 51336  Misses: 978  Evictions: 0  Overflows: 0  Memory Usage: 92kB
+                                                           Buffers: shared hit=3429 read=40
+                                                           I/O Timings: shared read=26.423
+                                                         Worker 1:  actual time=0.001..0.001 rows=1 loops=50208
+                                                           Hits: 49244  Misses: 964  Evictions: 0  Overflows: 0  Memory Usage: 91kB
+                                                           Buffers: shared hit=3384 read=40
+                                                           I/O Timings: shared read=20.038
+                                                         ->  Index Scan using housing_trend_pkey on public.housing_trend  (cost=0.43..7.59 rows=1 width=14) (actual time=0.067..0.067 rows=1 loops=2886)
+                                                               Output: housing_trend.zhvi_value, housing_trend.postal_code
+                                                               Index Cond: (((housing_trend.postal_code)::text = (b.postal_code)::text) AND (housing_trend.trend_date = (InitPlan 1).col1))
+                                                               Buffers: shared hit=10133 read=121
+                                                               I/O Timings: shared read=71.236
+                                                               Worker 0:  actual time=0.068..0.068 rows=1 loops=978
+                                                                 Buffers: shared hit=3429 read=40
+                                                                 I/O Timings: shared read=26.423
+                                                               Worker 1:  actual time=0.060..0.060 rows=1 loops=964
+                                                                 Buffers: shared hit=3384 read=40
+                                                                 I/O Timings: shared read=20.038
+                                             ->  Memoize  (cost=0.44..7.60 rows=1 width=14) (actual time=0.002..0.002 rows=1 loops=103444)
+                                                   Output: housing_trend_1.zhvi_value, housing_trend_1.postal_code
+                                                   Cache Key: b.postal_code
+                                                   Cache Mode: logical
+                                                   Hits: 29545  Misses: 529  Evictions: 0  Overflows: 0  Memory Usage: 57kB
+                                                   Buffers: shared hit=6001 read=79
+                                                   I/O Timings: shared read=48.037
+                                                   Worker 0:  actual time=0.001..0.001 rows=1 loops=37385
+                                                     Hits: 36851  Misses: 534  Evictions: 0  Overflows: 0  Memory Usage: 57kB
+                                                     Buffers: shared hit=2012 read=21
+                                                     I/O Timings: shared read=10.661
+                                                   Worker 1:  actual time=0.001..0.001 rows=1 loops=35985
+                                                     Hits: 35454  Misses: 531  Evictions: 0  Overflows: 0  Memory Usage: 57kB
+                                                     Buffers: shared hit=2000 read=26
+                                                     I/O Timings: shared read=12.238
+                                                   ->  Index Scan using housing_trend_pkey on public.housing_trend housing_trend_1  (cost=0.43..7.59 rows=1 width=14) (actual time=0.089..0.089 rows=1 loops=1594)
+                                                         Output: housing_trend_1.zhvi_value, housing_trend_1.postal_code
+                                                         Index Cond: (((housing_trend_1.postal_code)::text = (b.postal_code)::text) AND (housing_trend_1.trend_date = (InitPlan 2).col1))
+                                                         Buffers: shared hit=6001 read=79
+                                                         I/O Timings: shared read=48.037
+                                                         Worker 0:  actual time=0.070..0.070 rows=1 loops=534
+                                                           Buffers: shared hit=2012 read=21
+                                                           I/O Timings: shared read=10.661
+                                                         Worker 1:  actual time=0.084..0.084 rows=1 loops=531
+                                                           Buffers: shared hit=2000 read=26
+                                                           I/O Timings: shared read=12.238
+                                       ->  Hash  (cost=98.83..98.83 rows=4683 width=16) (actual time=1.775..1.778 rows=4683 loops=3)
+                                             Output: z.city, z.postal_code
+                                             Buckets: 8192  Batches: 1  Memory Usage: 283kB
+                                             Buffers: shared hit=156
+                                             Worker 0:  actual time=1.891..1.894 rows=4683 loops=1
+                                               Buffers: shared hit=52
+                                             Worker 1:  actual time=1.784..1.788 rows=4683 loops=1
+                                               Buffers: shared hit=52
+                                             ->  Seq Scan on public.zip_region z  (cost=0.00..98.83 rows=4683 width=16) (actual time=0.025..0.815 rows=4683 loops=3)
+                                                   Output: z.city, z.postal_code
+                                                   Buffers: shared hit=156
+                                                   Worker 0:  actual time=0.034..0.865 rows=4683 loops=1
+                                                     Buffers: shared hit=52
+                                                   Worker 1:  actual time=0.029..0.808 rows=4683 loops=1
+                                                     Buffers: shared hit=52
+ Query Identifier: 7162166336156320410
+ Planning:
+   Buffers: shared hit=95 read=1
+   I/O Timings: shared read=0.684
+ Planning Time: 9.515 ms
+ Execution Time: 41850.029 ms
+(244 rows)
+
+Time: 39393.309 ms (00:39.393)
+
+################################################################
+# BASELINE RUN COMPLETE                                        #
+#   Look for "Execution Time: ... ms" at the end of each plan. #
+#   Record those numbers in optimization_baseline.md.          #
+################################################################
