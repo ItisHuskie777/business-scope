@@ -210,6 +210,47 @@ const businessReviewStats = async (req, res) => {
   }
 };
 
+
+
+// Optimized Version of Route 5
+// WITH review_stats AS (
+//   SELECT r.business_id,
+//          COUNT(*)      AS total_reviews,
+//          AVG(r.stars)  AS avg_review_rating,
+//          AVG(r.useful) AS avg_useful,
+//          AVG(r.funny)  AS avg_funny,
+//          AVG(r.cool)   AS avg_cool
+//   FROM review r
+//   GROUP BY r.business_id
+//   HAVING COUNT(*) >= $1
+// ),
+// enriched AS (
+//   SELECT b.business_id,
+//          b.name,
+//          b.postal_code,
+//          z.city,
+//          rs.total_reviews,
+//          rs.avg_review_rating,
+//          rs.avg_useful,
+//          rs.avg_funny,
+//          rs.avg_cool
+//   FROM review_stats rs
+//   JOIN business b   ON b.business_id = rs.business_id
+//   JOIN zip_region z ON z.postal_code = b.postal_code
+// ),
+// ranked AS (
+//   SELECT e.*,
+//          RANK() OVER (PARTITION BY e.city ORDER BY e.total_reviews DESC) AS city_review_rank
+//   FROM enriched e
+// )
+// SELECT business_id, name, postal_code, city,
+//        total_reviews, avg_review_rating, avg_useful, avg_funny, avg_cool,
+//        city_review_rank
+// FROM ranked
+// WHERE city_review_rank <= $2
+// ORDER BY city, city_review_rank, total_reviews DESC
+// LIMIT $3 OFFSET $4;
+
 // Route 6 (Complex): GET /top_business_per_zip
 // Corresponds to MS3 Query 6
 // Query params: limit (default 100)
@@ -239,6 +280,32 @@ const topBusinessPerZip = async (req, res) => {
     handleDbError(err, res, 'Failed to fetch top business per zip');
   }
 };
+
+
+// Optimized Version of Route 6
+// WITH review_counts AS (
+//   SELECT r.business_id, COUNT(*) AS review_count
+//   FROM review r
+//   GROUP BY r.business_id
+// ),
+// per_business AS (
+//   SELECT b.postal_code,
+//          b.name,
+//          COALESCE(rc.review_count, 0) AS review_count
+//   FROM business b
+//   LEFT JOIN review_counts rc ON rc.business_id = b.business_id
+//   WHERE b.postal_code IS NOT NULL
+// ),
+// top_per_zip AS (
+//   SELECT DISTINCT ON (postal_code)
+//          postal_code, name, review_count
+//   FROM per_business
+//   ORDER BY postal_code, review_count DESC, name
+// )
+// SELECT postal_code, name, review_count
+// FROM top_per_zip
+// ORDER BY review_count DESC
+// LIMIT $1;
 
 
 // Route 7: GET /housing_trend/:postal_code
@@ -295,6 +362,22 @@ const ratingVsHousing = async (req, res) => {
     handleDbError(err, res, 'Failed to fetch rating vs housing');
   }
 };
+
+// Optimized Version of Route 8
+// WITH latest_housing AS (
+//   SELECT DISTINCT ON (postal_code)
+//          postal_code,
+//          zhvi_value
+//   FROM housing_trend
+//   ORDER BY postal_code, trend_date DESC
+// )
+// SELECT b.postal_code,
+//        AVG(b.stars) AS avg_business_rating,
+//        lh.zhvi_value AS latest_zhvi
+// FROM business b
+// JOIN latest_housing lh ON lh.postal_code = b.postal_code
+// GROUP BY b.postal_code, lh.zhvi_value
+// ORDER BY latest_zhvi DESC;
 
 
 // Route 9: GET /zip_business_count
@@ -384,6 +467,46 @@ const opportunityScore = async (req, res) => {
     handleDbError(err, res, 'Failed to fetch opportunity score');
   }
 };
+
+// Optimized Version of Route 11
+// WITH bounds AS (
+//   SELECT MAX(trend_date) AS max_d, MIN(trend_date) AS min_d
+//   FROM housing_trend
+// ),
+// h_latest AS (
+//   SELECT ht.postal_code, ht.zhvi_value
+//   FROM housing_trend ht
+//   JOIN bounds b ON ht.trend_date = b.max_d
+// ),
+// h_oldest AS (
+//   SELECT ht.postal_code, ht.zhvi_value
+//   FROM housing_trend ht
+//   JOIN bounds b ON ht.trend_date = b.min_d
+// ),
+// review_by_business AS (
+//   SELECT r.business_id,
+//          COUNT(*)            AS review_count,
+//          SUM(r.stars)::float AS sum_review_stars
+//   FROM review r
+//   GROUP BY r.business_id
+// )
+// SELECT b.postal_code,
+//        z.city,
+//        COUNT(*) AS business_count,
+//        ROUND(AVG(b.stars)::numeric, 2) AS avg_business_stars,
+//        ROUND(
+//          (SUM(COALESCE(rbb.sum_review_stars, 0)) / NULLIF(SUM(COALESCE(rbb.review_count, 0)), 0))::numeric
+//        , 2) AS avg_review_stars,
+//        MAX(hl.zhvi_value) AS latest_zhvi,
+//        ROUND((MAX(hl.zhvi_value) - MAX(ho.zhvi_value))::numeric, 2) AS zhvi_growth
+// FROM business b
+// JOIN zip_region z ON z.postal_code = b.postal_code
+// LEFT JOIN review_by_business rbb ON rbb.business_id = b.business_id
+// JOIN h_latest hl ON hl.postal_code = b.postal_code
+// JOIN h_oldest ho ON ho.postal_code = b.postal_code
+// GROUP BY b.postal_code, z.city
+// HAVING COUNT(*) >= $1
+// ORDER BY avg_review_stars DESC NULLS LAST;
 
 
 // ============================================================
