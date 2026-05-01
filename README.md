@@ -66,11 +66,11 @@ Or use DataGrip / pgAdmin with the following settings:
 
 | Field    | Value                                                              |
 |----------|--------------------------------------------------------------------|
-| Host     | cis5500-project.civkthoibwwa.us-east-1.rds.amazonaws.com          |
+| Host     | cis5500-project-mirror.cdntwwouizxi.us-east-1.rds.amazonaws.com    |
 | Port     | 5432                                                               |
 | Database | postgres                                                           |
 | Username | guest                                                              |
-| Password | MyStr0ng@Pass2026!                                                 |
+| Password | 5500FINALPROJECT!!                                                 |
 
 The guest account has read-only (SELECT) access to all tables.
 
