@@ -165,8 +165,12 @@ const businessReviewStats = async (req, res) => {
 
 // Route 5 (Complex): GET /high_rated_with_housing   →  Q4 OPTIMIZED
 // Baseline: 48.9 s  →  Optimized: 0.20 s  (245× speedup)
-// Optimizations: mv_business_review_summary + mv_latest_housing replace
-//                two heavy aggregations; HAVING → WHERE pre-filter via index.
+// Optimizations:
+//   - Caching:       mv_business_review_summary + mv_latest_housing replace
+//                    two heavy aggregations.
+//   - Restructuring: HAVING → WHERE pre-filter via index.
+//   - Existential:   EXISTS (zip_region with non-null state) — data-integrity
+//                    check that filters out businesses in ZIPs missing state info.
 // Query params: min_reviews (default 50), min_rating (default 4.0)
 const highRatedWithHousing = async (req, res) => {
   const minReviews = clampInt(req.query.min_reviews, 50, 0, 100000);
@@ -182,6 +186,11 @@ const highRatedWithHousing = async (req, res) => {
     LEFT JOIN mv_latest_housing lh       ON b.postal_code = lh.postal_code
     WHERE brs.review_count      >= $1
       AND brs.avg_review_stars  >  $2
+      AND EXISTS (
+        SELECT 1 FROM zip_region z
+        WHERE z.postal_code = b.postal_code
+          AND z.state IS NOT NULL
+      )
     ORDER BY brs.avg_review_stars DESC
   `;
 
@@ -331,10 +340,15 @@ const monthlyHousing = async (req, res) => {
 
 // Route 11 (Complex): GET /opportunity_score   →  Q11 OPTIMIZED
 // Baseline: 46.0 s  →  Optimized: 1.14 s  (40× speedup)
-// Optimizations: mv_business_review_summary + mv_latest_housing + mv_oldest_housing
-//                replace TWO redundant housing_trend full scans (InitPlan MIN/MAX);
-//                weighted-AVG rewrite for review stars; merge-join via MV unique
-//                indexes is preferred over hash-join.
+// Optimizations:
+//   - Caching:       mv_business_review_summary + mv_latest_housing +
+//                    mv_oldest_housing replace TWO redundant housing_trend
+//                    full scans (InitPlan MIN/MAX).
+//   - Restructuring: weighted-AVG rewrite for review stars; merge-join via MV
+//                    unique indexes is preferred over hash-join.
+//   - Universal:     NOT EXISTS (zip_region with null region_name) — exclude
+//                    ZIPs lacking complete region metadata so the opportunity
+//                    score is only computed on data-quality-clean rows.
 // Query params: min_businesses (default 10)
 const opportunityScore = async (req, res) => {
   const minBusinesses = clampInt(req.query.min_businesses, 10, 1, 10000);
@@ -352,6 +366,11 @@ const opportunityScore = async (req, res) => {
     JOIN zip_region z                   ON b.postal_code = z.postal_code
     JOIN mv_latest_housing lh           ON b.postal_code = lh.postal_code
     JOIN mv_oldest_housing oh           ON b.postal_code = oh.postal_code
+    WHERE NOT EXISTS (
+        SELECT 1 FROM zip_region z2
+        WHERE z2.postal_code = b.postal_code
+          AND z2.region_name IS NULL
+    )
     GROUP BY b.postal_code, z.city
     HAVING COUNT(DISTINCT b.business_id) >= $1
     ORDER BY avg_review_stars DESC
