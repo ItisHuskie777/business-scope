@@ -66,7 +66,7 @@ Or use DataGrip / pgAdmin with the following settings:
 
 | Field    | Value                                                              |
 |----------|--------------------------------------------------------------------|
-| Host     | cis5500-project.civkthoibwwa.us-east-1.rds.amazonaws.com          |
+| Host     | cis5500-project-mirror.cdntwwouizxi.us-east-1.rds.amazonaws.com    |
 | Port     | 5432                                                               |
 | Database | postgres                                                           |
 | Username | guest                                                              |

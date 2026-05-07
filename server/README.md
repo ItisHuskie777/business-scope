@@ -78,8 +78,8 @@ Four complex queries marked with **★**.
 | GET | `/businesses` | — | Open businesses in ZIP 19104 (Q1) |
 | GET | `/postal_code_stats` | — | Avg rating + count per ZIP (Q2) |
 | GET | `/city_business_stats` | — | Business count per city (Q3) |
-| GET | `/business_review_stats` | `page` (default 1), `limit` (default 50, max 500) | Paginated review aggregates (Q5) |
-| GET | `/high_rated_with_housing` ★ | `min_reviews` (default 50), `min_rating` (default 4.0, 0–5) | High-rated businesses + latest ZHVI (Q4) |
+| GET | `/high_rated_with_housing`| `min_reviews` (default 50), `min_rating` (default 4.0, 0–5) | High-rated businesses + latest ZHVI (Q4) |
+| GET | `/business_review_stats` ★ | `page`, `limit` (default 50, max 500), `min_reviews` (default 50), `top_n` (default 5, 1–50) | Per-city top-N by reviews: CTE + 3 joins + `HAVING` + `RANK()`; paginated (Q5) |
 | GET | `/top_business_per_zip` ★ | `limit` (default 100, 1–1000) | Top business per ZIP via RANK() (Q6) |
 | GET | `/housing_trend/:postal_code` | `postal_code` (5-digit ZIP, required) | Full ZHVI time-series for a ZIP (Q7) |
 | GET | `/rating_vs_housing` ★ | — | Avg business rating vs latest ZHVI by ZIP (Q8) |
@@ -103,6 +103,9 @@ curl "http://localhost:8080/housing_trend/19104"
 
 # Top 5 most-reviewed business per ZIP
 curl "http://localhost:8080/top_business_per_zip?limit=5"
+
+# Review stats: top 3 per city (≥50 reviews), page 1
+curl "http://localhost:8080/business_review_stats?top_n=3&page=1&limit=20"
 
 # Opportunity score for ZIPs with ≥20 businesses
 curl "http://localhost:8080/opportunity_score?min_businesses=20"
