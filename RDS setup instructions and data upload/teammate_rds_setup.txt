@@ -1,0 +1,222 @@
+================================================================================
+CIS 5500 Group 35 — Setting up a duplicate RDS instance
+================================================================================
+
+Goal: stand up a second PostgreSQL RDS instance with identical schema and data
+to the team's main RDS, so workload (optimization tests, demo runs) can be
+spread across two databases.
+
+Reference (the existing main RDS — for spec-matching only, do NOT reuse):
+  Host:    cis5500-project.civkthoibwwa.us-east-1.rds.amazonaws.com
+  Engine:  PostgreSQL 17.6
+  Region:  us-east-1
+  Port:    5432
+  DB:      postgres
+
+
+--------------------------------------------------------------------------------
+STEP 1 — Create the RDS instance on AWS Academy (recommended)
+--------------------------------------------------------------------------------
+
+1. Log into AWS Academy Learner Lab → Start Lab → click "AWS" to open console.
+2. Region: top-right, switch to "US East (N. Virginia) us-east-1".
+3. Service: search "RDS" → Databases → "Create database".
+
+Use these EXACT settings (match them to keep parity with the team RDS):
+
+  Choose a database creation method ........ Standard create
+  Engine type .............................. PostgreSQL
+  Engine version ........................... PostgreSQL 17.6 (or any 17.x)
+  Templates ................................ Free tier
+  DB instance identifier ................... cis5500-project-mirror
+                                             (any unique name is fine)
+  Master username .......................... postgres
+  Master password .......................... <pick a strong password,
+                                             10+ chars, mix letters/digits/symbols>
+                                             *** SAVE THIS — you cannot recover it ***
+
+  DB instance class ........................ db.t3.micro (or db.t4g.micro)
+  Storage type ............................. gp3 (or gp2)
+  Allocated storage ........................ 20 GB
+  Storage autoscaling ...................... enabled, max 30 GB
+                                             (data is ~3 GB, indexes add ~500 MB)
+
+  Connectivity:
+    VPC .................................... default
+    Public access .......................... Yes  *** important ***
+    VPC security group ..................... Create new
+                                             name: rds-cis5500-public
+    Availability zone ...................... no preference
+    Database port .......................... 5432
+
+  Database authentication .................. Password authentication
+
+  Additional configuration:
+    Initial database name .................. postgres
+    Backup retention ....................... 0 days  (saves cost)
+    Encryption ............................. OFF    (Academy free tier limit)
+    Performance Insights ................... OFF
+    Enhanced monitoring .................... OFF
+
+4. Click "Create database". Wait ~5–10 minutes until status = "Available".
+5. Copy the new endpoint hostname — it looks like:
+     cis5500-project-mirror.xxxxxxxxx.us-east-1.rds.amazonaws.com
+
+
+--------------------------------------------------------------------------------
+STEP 2 — Open the security group so your laptop can connect
+--------------------------------------------------------------------------------
+
+By default the new security group blocks all inbound traffic.
+
+1. RDS console → your new DB → Connectivity & security tab → click the
+   VPC security group link.
+2. Inbound rules → Edit inbound rules → Add rule:
+     Type:       PostgreSQL
+     Protocol:   TCP
+     Port:       5432
+     Source:     My IP    (or  0.0.0.0/0  if you need it open from anywhere
+                          — less secure but easier for team access)
+3. Save.
+
+Verify from your laptop:
+  psql "host=<your-endpoint> port=5432 dbname=postgres user=postgres sslmode=require"
+
+
+--------------------------------------------------------------------------------
+STEP 3 — Create the schema
+--------------------------------------------------------------------------------
+
+From the project root on your laptop:
+
+  export PGPASSWORD='<your master password>'
+
+  psql "host=<your-endpoint> port=5432 dbname=postgres user=postgres sslmode=require" \
+       -f create_tables.sql
+
+You should see four "CREATE TABLE" messages and zero errors. The schema:
+  zip_region     (4 683 rows after load)
+  business       (144 789 rows)
+  review         (5 128 678 rows)
+  housing_trend  (1 115 632 rows)
+
+
+--------------------------------------------------------------------------------
+STEP 4 — Load the cleaned data
+--------------------------------------------------------------------------------
+
+The cleaned CSVs live at:
+  clean_data/untitled folder 2/zip_region.csv
+  clean_data/untitled folder 2/business_clean.csv
+  clean_data/untitled folder 2/reviews_clean_final.csv
+  clean_data/untitled folder 2/housing_trend.csv
+
+If you don't have these files locally, ask Carrie to share them via Google Drive
+or pull from the team's S3 bucket (whichever the team has set up).
+
+Edit load_data.py to point at YOUR endpoint:
+  Line 11:  "host":     "<your-endpoint>"
+(or just leave it and override via env var; see below)
+
+Then run:
+
+  pip install psycopg2-binary
+  export PGPASSWORD='<your master password>'
+  python load_data.py
+
+Expected runtime: 3–6 minutes (review.csv is ~1.5 GB and uses COPY).
+
+
+--------------------------------------------------------------------------------
+STEP 5 — Point the backend at your RDS (for local dev / demo)
+--------------------------------------------------------------------------------
+
+Edit  server/config.json  with YOUR values:
+
+{
+  "rds_host":     "<your-endpoint>",
+  "rds_port":     "5432",
+  "rds_user":     "postgres",
+  "rds_password": "<your master password>",
+  "rds_db":       "postgres",
+  "server_host":  "localhost",
+  "server_port":  "8080"
+}
+
+DO NOT commit your version of config.json with the real password — it is
+already in .gitignore. Use config.example.json as the committed template.
+
+Start the server:
+  cd server
+  npm install
+  npm start              # http://localhost:8080
+
+Smoke test:
+  curl http://localhost:8080/cities
+
+
+--------------------------------------------------------------------------------
+STEP 6 — (Optional but recommended) Create the optimization indexes
+--------------------------------------------------------------------------------
+
+If you want your mirror RDS to match the OPTIMIZED state of the main one
+(useful for benchmarking / demo), run after data load:
+
+  psql "host=<your-endpoint> port=5432 dbname=postgres user=postgres sslmode=require" \
+       -f optimization/02_create_indexes.sql
+
+This creates:
+  idx_review_business_id        (review.business_id)
+  idx_business_postal_code      (business.postal_code)
+  idx_review_stars              (review.stars)
+
+Index build takes ~1–2 minutes total.
+
+If instead you want to keep an UNOPTIMIZED mirror to capture pre-optimization
+baselines, skip this step.
+
+
+--------------------------------------------------------------------------------
+STEP 7 — Smoke-test the complex queries
+--------------------------------------------------------------------------------
+
+  psql "host=<your-endpoint> port=5432 dbname=postgres user=postgres sslmode=require" \
+       -f optimization/01_baseline_complex_queries.sql \
+       > optimization/baseline_run_<your-name>.txt 2>&1
+
+  grep "Execution Time" optimization/baseline_run_<your-name>.txt
+
+You should see 4 Execution Time lines. If any error mentions "relation does
+not exist", the data load step didn't finish — re-run STEP 4.
+
+
+--------------------------------------------------------------------------------
+Cost / quota notes (AWS Academy Learner Lab)
+--------------------------------------------------------------------------------
+
+* Learner Lab gives ~$50 of credit per session. db.t3.micro free tier covers
+  most of this; your main cost will be storage (~$2.30 / 20GB / month).
+* Stop the lab when not in use to pause RDS billing.
+* Snapshots are not retained when the lab session ends — keep your CSVs
+  somewhere durable (Google Drive / S3) so you can re-load.
+* If status shows "Storage-full", increase Allocated storage in the RDS
+  console (no downtime, takes ~5 min).
+
+
+--------------------------------------------------------------------------------
+Quick checklist for the teammate
+--------------------------------------------------------------------------------
+
+[ ] AWS Academy lab started, region = us-east-1
+[ ] PostgreSQL 17.x RDS instance created, status = Available
+[ ] Security group inbound rule allows your IP on port 5432
+[ ] Endpoint hostname copied
+[ ] psql connects successfully from laptop
+[ ] create_tables.sql ran clean, 4 tables exist
+[ ] CSVs loaded, row counts match (4683 / 144789 / 5128678 / 1115632)
+[ ] server/config.json updated locally (NOT committed)
+[ ] optional: indexes built via 02_create_indexes.sql
+[ ] optional: baseline run captured
+
+Ping in the team chat once you're done — Carrie will hand off any
+benchmarking / demo work that should run against the mirror.

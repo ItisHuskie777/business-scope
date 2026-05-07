@@ -335,12 +335,21 @@ const housingTrend = async (req, res) => {
 
 // Route 8 (Complex): GET /rating_vs_housing
 // Corresponds to MS3 Query 8
+// Query params: min_businesses (default 5)
 const ratingVsHousing = async (req, res) => {
+  const minBusinesses = clampInt(req.query.min_businesses, 5, 1, 1000);
+
   const text = `
     SELECT b.postal_code,
-           AVG(b.stars) AS avg_business_rating,
-           h.zhvi_value AS latest_zhvi
+           z.city,
+           COUNT(DISTINCT b.business_id)       AS business_count,
+           AVG(b.stars)                        AS avg_business_rating,
+           AVG(r.stars)                        AS avg_review_rating,
+           COUNT(r.review_id)                  AS total_reviews,
+           h.zhvi_value                        AS latest_zhvi
     FROM business b
+    JOIN review r     ON b.business_id = r.business_id
+    JOIN zip_region z ON b.postal_code = z.postal_code
     JOIN (
         SELECT ht1.postal_code, ht1.zhvi_value
         FROM housing_trend ht1
@@ -351,12 +360,13 @@ const ratingVsHousing = async (req, res) => {
         ) ht2 ON ht1.postal_code = ht2.postal_code
              AND ht1.trend_date  = ht2.latest_date
     ) h ON b.postal_code = h.postal_code
-    GROUP BY b.postal_code, h.zhvi_value
+    GROUP BY b.postal_code, z.city, h.zhvi_value
+    HAVING COUNT(DISTINCT b.business_id) >= $1
     ORDER BY latest_zhvi DESC
   `;
 
   try {
-    const { rows } = await pool.query(text);
+    const { rows } = await pool.query(text, [minBusinesses]);
     res.json(rows);
   } catch (err) {
     handleDbError(err, res, 'Failed to fetch rating vs housing');
