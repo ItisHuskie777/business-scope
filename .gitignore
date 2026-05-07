@@ -10,6 +10,10 @@ Project Files Clean/
 server/node_modules/
 server/config.json
 
+# client build artifacts & deps (build locally; source lives in teammate's repo)
+client/node_modules/
+client/dist/
+
 # logs
 npm-debug.log*
 yarn-debug.log*
