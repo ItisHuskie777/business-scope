@@ -34,13 +34,13 @@ export default function NavBar() {
           >
             <StoreMallDirectoryIcon />
             <Typography variant="h6" component="span" sx={{ fontWeight: 700 }}>
-              NBOE
+              Business Scope
             </Typography>
             <Typography
               variant="body2"
               sx={{ ml: 1, opacity: 0.8, display: { xs: "none", md: "block" } }}
             >
-              Neighborhood Business Opportunity Explorer
+              Business Scope
             </Typography>
           </Box>
           <Box sx={{ flexGrow: 1 }} />

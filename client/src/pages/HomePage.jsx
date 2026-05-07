@@ -72,7 +72,7 @@ export default function HomePage() {
           sx={{ mb: 1.5 }}
         />
         <Typography variant="h1" gutterBottom>
-          Neighborhood Business Opportunity Explorer
+          Business Scope
         </Typography>
         <Typography variant="h5" color="text.secondary" sx={{ maxWidth: 780 }}>
           Combine Yelp business data with Zillow housing trends to identify
