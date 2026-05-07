@@ -56,16 +56,55 @@ const handleDbError = (err, res, fallbackMsg) => {
 // ============================================================
 
 
-// Route 1: GET /businesses  (unchanged — simple query, no optimization needed)
-const businesses = async (_req, res) => {
+// Route 1: GET /businesses  (generalised for the new frontend filters)
+// Query params (all optional):
+//   postal_code  5-digit ZIP
+//   city         city name (case-sensitive)
+//   state        2-letter US state code
+//   min_stars    minimum stars (0–5)
+//   open_only    "true" (default) | "false"
+//   limit        rows per page (default 100, max 1000)
+//   page         1-indexed page (default 1)
+// Response envelope: { page, limit, rows: [...] }
+const businesses = async (req, res) => {
+  const { postal_code, city, state } = req.query;
+  const openOnly = req.query.open_only !== 'false';
+  const minStars = clampFloat(req.query.min_stars, 0, 0, 5);
+  const limit = clampInt(req.query.limit, 100, 1, 1000);
+  const page = clampInt(req.query.page, 1, 1, 100000);
+  const offset = (page - 1) * limit;
+
+  if (postal_code !== undefined && !isValidZip(postal_code)) {
+    return res.status(400).json({ error: 'postal_code must be a 5-digit ZIP' });
+  }
+  if (state !== undefined && !STATE_RE.test(state)) {
+    return res.status(400).json({ error: 'state must be a 2-letter code (e.g. PA)' });
+  }
+
+  const conditions = [];
+  const params = [];
+  if (postal_code) { params.push(postal_code);          conditions.push(`postal_code = $${params.length}`); }
+  if (city)        { params.push(city);                  conditions.push(`city = $${params.length}`); }
+  if (state)       { params.push(state.toUpperCase());   conditions.push(`state = $${params.length}`); }
+  if (openOnly)    { conditions.push(`is_open = 1`); }
+  if (minStars > 0){ params.push(minStars);              conditions.push(`stars >= $${params.length}`); }
+
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  params.push(limit);  const limitParam = `$${params.length}`;
+  params.push(offset); const offsetParam = `$${params.length}`;
+
   const text = `
-    SELECT business_id, name, city, stars, categories
+    SELECT business_id, name, address, city, state, postal_code,
+           stars, is_open, categories
     FROM business
-    WHERE postal_code = '19104' AND is_open = 1
+    ${where}
+    ORDER BY name
+    LIMIT ${limitParam} OFFSET ${offsetParam}
   `;
+
   try {
-    const { rows } = await pool.query(text);
-    res.json(rows);
+    const { rows } = await pool.query(text, params);
+    res.json({ page, limit, rows });
   } catch (err) {
     handleDbError(err, res, 'Failed to fetch businesses');
   }

@@ -16,7 +16,7 @@ const {
   cities,
   zipCodes,
   businessById,
-} = require('./routes');
+} = require('./routes_optimized');
 
 const app = express();
 app.use(cors({
