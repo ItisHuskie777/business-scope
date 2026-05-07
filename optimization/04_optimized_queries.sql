@@ -24,6 +24,7 @@
 -- #   2. Caching: mv_business_review_summary replaces GROUP BY review       #
 -- #              mv_latest_housing replaces MAX(trend_date) subquery        #
 -- #   3. Restructuring: HAVING → WHERE (pre-filter before final select)     #
+-- #   4. Existential: EXISTS check on zip_region for state-info data quality#
 -- ###########################################################################
 
 -- ---- Q4 OPTIMIZED PLAIN ---------------------------------------------------
@@ -36,6 +37,11 @@ JOIN mv_business_review_summary brs ON b.business_id = brs.business_id
 LEFT JOIN mv_latest_housing lh       ON b.postal_code = lh.postal_code
 WHERE brs.review_count >= 50
   AND brs.avg_review_stars > 4.0
+  AND EXISTS (
+      SELECT 1 FROM zip_region z
+      WHERE z.postal_code = b.postal_code
+        AND z.state IS NOT NULL
+  )
 ORDER BY brs.avg_review_stars DESC;
 
 -- ---- Q4 OPTIMIZED EXPLAIN -------------------------------------------------
@@ -49,6 +55,11 @@ JOIN mv_business_review_summary brs ON b.business_id = brs.business_id
 LEFT JOIN mv_latest_housing lh       ON b.postal_code = lh.postal_code
 WHERE brs.review_count >= 50
   AND brs.avg_review_stars > 4.0
+  AND EXISTS (
+      SELECT 1 FROM zip_region z
+      WHERE z.postal_code = b.postal_code
+        AND z.state IS NOT NULL
+  )
 ORDER BY brs.avg_review_stars DESC;
 
 
@@ -226,6 +237,7 @@ ORDER BY lh.zhvi_value DESC;
 -- #   3. Restructuring: Two MV joins replace 4 housing_trend full scans     #
 -- #                     (2x InitPlan + 2x correlated lookup).               #
 -- #                     Weighted AVG instead of per-row aggregation.        #
+-- #   4. Universal: NOT EXISTS to exclude ZIPs with missing region metadata #
 -- ###########################################################################
 
 -- ---- Q11 OPTIMIZED PLAIN --------------------------------------------------
@@ -241,6 +253,11 @@ JOIN mv_business_review_summary brs ON b.business_id = brs.business_id
 JOIN zip_region z                   ON b.postal_code = z.postal_code
 JOIN mv_latest_housing lh           ON b.postal_code = lh.postal_code
 JOIN mv_oldest_housing oh           ON b.postal_code = oh.postal_code
+WHERE NOT EXISTS (
+    SELECT 1 FROM zip_region z2
+    WHERE z2.postal_code = b.postal_code
+      AND z2.region_name IS NULL
+)
 GROUP BY b.postal_code, z.city
 HAVING COUNT(DISTINCT b.business_id) >= 10
 ORDER BY avg_review_stars DESC;
@@ -259,6 +276,11 @@ JOIN mv_business_review_summary brs ON b.business_id = brs.business_id
 JOIN zip_region z                   ON b.postal_code = z.postal_code
 JOIN mv_latest_housing lh           ON b.postal_code = lh.postal_code
 JOIN mv_oldest_housing oh           ON b.postal_code = oh.postal_code
+WHERE NOT EXISTS (
+    SELECT 1 FROM zip_region z2
+    WHERE z2.postal_code = b.postal_code
+      AND z2.region_name IS NULL
+)
 GROUP BY b.postal_code, z.city
 HAVING COUNT(DISTINCT b.business_id) >= 10
 ORDER BY avg_review_stars DESC;
