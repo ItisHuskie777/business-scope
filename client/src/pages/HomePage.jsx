@@ -33,7 +33,6 @@ const FEATURES = [
     title: "Business Explorer",
     description:
       "Browse Yelp businesses by city and ZIP with rating and review filters.",
-    owner: "Colin",
     icon: <StorefrontIcon fontSize="large" />,
   },
   {
@@ -41,7 +40,6 @@ const FEATURES = [
     title: "Neighborhood Analytics",
     description:
       "Compare business quality and housing prices across neighborhoods.",
-    owner: "Eitan",
     icon: <LocationCityIcon fontSize="large" />,
   },
   {
@@ -49,7 +47,6 @@ const FEATURES = [
     title: "Map & Recommendations",
     description:
       "Visualize opportunity scores on a map and discover promising ZIPs.",
-    owner: "Zihan",
     icon: <MapIcon fontSize="large" />,
   },
 ];
@@ -72,7 +69,7 @@ export default function HomePage() {
           sx={{ mb: 1.5 }}
         />
         <Typography variant="h1" gutterBottom>
-          Neighborhood Business Opportunity Explorer
+          Business Scope
         </Typography>
         <Typography variant="h5" color="text.secondary" sx={{ maxWidth: 780 }}>
           Combine Yelp business data with Zillow housing trends to identify
@@ -140,13 +137,6 @@ export default function HomePage() {
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
                       {f.description}
-                    </Typography>
-                    <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      sx={{ mt: 2, display: "block" }}
-                    >
-                      Owned by {f.owner}
                     </Typography>
                   </CardContent>
                 </CardActionArea>
