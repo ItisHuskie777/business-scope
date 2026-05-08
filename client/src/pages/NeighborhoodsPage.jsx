@@ -38,6 +38,27 @@ const formatUSD = (value) =>
         maximumFractionDigits: 0,
       });
 
+const renderQ8Tooltip = ({ active, payload }) => {
+  if (!active || !payload?.length) return null;
+  const point = payload[0]?.payload;
+  if (!point) return null;
+
+  return (
+    <Paper sx={{ px: 1.5, py: 1, border: "1px solid #E4E9EE" }}>
+      <Typography variant="caption" sx={{ fontWeight: 700, display: "block" }}>
+        ZIP {point.postal_code}
+        {point.city ? ` · ${point.city}` : ""}
+      </Typography>
+      <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+        Avg business rating: {Number(point.rating).toFixed(2)}
+      </Typography>
+      <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+        Latest ZHVI: {formatUSD(point.zhvi)}
+      </Typography>
+    </Paper>
+  );
+};
+
 /**
  * Neighborhood Analytics — complex queries:
  *   • Q11 /opportunity_score        — ranked leaderboard
@@ -392,16 +413,7 @@ export default function NeighborhoodsPage() {
                   }
                 />
                 <ZAxis range={[40, 41]} />
-                <Tooltip
-                  cursor={{ strokeDasharray: "3 3" }}
-                  formatter={(value, name) => {
-                    if (name === "Latest ZHVI") return formatUSD(value);
-                    if (name === "Avg rating") return Number(value).toFixed(2);
-                    return value;
-                  }}
-                  labelFormatter={() => ""}
-                  contentStyle={{ fontSize: 12 }}
-                />
+                <Tooltip cursor={{ strokeDasharray: "3 3" }} content={renderQ8Tooltip} />
                 <Scatter data={scatterData} fill="#1E4D6B" fillOpacity={0.55} />
               </ScatterChart>
             </ResponsiveContainer>

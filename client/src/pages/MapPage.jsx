@@ -5,7 +5,6 @@ import {
   Stack,
   Typography,
   Chip,
-  Slider,
   TextField,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
@@ -79,7 +78,7 @@ export default function MapPage() {
   const radiusFor = (count) => 6 + Math.sqrt(count / maxBusinesses) * 28;
 
   // ---- Q6 table: top business per ZIP -------------------------------------
-  const [topLimit, setTopLimit] = useState(50);
+  const topLimit = 50;
   const {
     data: topRows,
     loading: topLoading,
@@ -206,20 +205,6 @@ export default function MapPage() {
             Single most-reviewed business in each ZIP, ranked by review count
             using <code>RANK() OVER (PARTITION BY postal_code …)</code>.
           </Typography>
-          <Box sx={{ mb: 2, maxWidth: 320 }}>
-            <Typography variant="caption" color="text.secondary">
-              Rows: {topLimit}
-            </Typography>
-            <Slider
-              value={topLimit}
-              onChange={(_, v) => setTopLimit(v)}
-              step={10}
-              min={10}
-              max={500}
-              size="small"
-              valueLabelDisplay="auto"
-            />
-          </Box>
           {topLoading && <LoadingState label="Loading top businesses…" />}
           {topError && <ErrorState error={topError} onRetry={topRefetch} />}
           {!topLoading && !topError && (
