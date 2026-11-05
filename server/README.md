@@ -1,142 +1,150 @@
-# Backend Server — CIS 5500 Project Group 35
+# Backend Server
 
-Node/Express backend exposing a PostgreSQL (AWS RDS) database of Yelp businesses, reviews, and Zillow housing data.
+Node/Express API over a PostgreSQL database of Yelp businesses and reviews and Zillow housing values.
 
-Default port: **8080**.
+Default port: **8080**. Requires Node.js 18 or newer.
 
 ---
 
-## 1. Install dependencies
+## 1. Install
 
 ```bash
 cd server
 npm install
 ```
 
-Requires Node.js ≥ 18. Dependencies: `express`, `pg`, `cors`.
-
----
-
 ## 2. Configure the database connection
 
-Copy the example config and fill in your RDS credentials:
+Configuration comes from environment variables. Nothing secret is stored in the repository.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `PGHOST` | `localhost` | Database host |
+| `PGPORT` | `5432` | Database port |
+| `PGUSER` | `postgres` | Database user |
+| `PGPASSWORD` | none | Database password |
+| `PGDATABASE` | `postgres` | Database name |
+| `PGSSL` | on for remote hosts, off for `localhost` | Set `true` or `false` to override |
+| `PORT` | `8080` | Port the API listens on |
+| `CORS_ORIGIN` | `*` | Allowed origin for browsers |
+| `CACHE_TTL_MS` | `300000` | Lifetime of a cached response; `0` turns the cache off |
+| `CACHE_MAX_ENTRIES` | `500` | Most responses kept in memory |
+| `CACHE_MAX_BYTES` | `67108864` | Most bytes of responses kept in memory |
+| `PG_POOL_MAX` | `10` | Connection pool size |
+| `PG_STATEMENT_TIMEOUT_MS` | `60000` | Per-query timeout |
+
+A git-ignored `config.json` in the course format (see `config.example.json`) is still read as a fallback. Environment variables take priority.
+
+## 3. Prepare the database
 
 ```bash
-cp config.example.json config.json
+npm run db:schema     # create the four empty tables
+# load the CSV data (see "RDS setup instructions and data upload/")
+npm run db:derived    # build indexes and materialized views
 ```
 
-Then edit `config.json`:
+After reloading data, refresh the materialized views with `optimization/07_refresh_materialized_views.sql`.
 
-```json
-{
-  "rds_host": "cis5500-project.civkthoibwwa.us-east-1.rds.amazonaws.com",
-  "rds_port": "5432",
-  "rds_user": "postgres",
-  "rds_password": "<RDS master password>",
-  "rds_db": "postgres",
-  "server_host": "localhost",
-  "server_port": "8080"
-}
-```
-
-`config.json` is gitignored — do NOT commit real credentials.
-
-If you forgot the master password, reset it in AWS console → RDS → select instance → **Modify** → Credentials Settings → apply immediately.
-
----
-
-## 3. Start the server
+## 4. Start
 
 ```bash
 npm start
-```
-
-You should see:
-
-```
-Server running at http://localhost:8080/
-```
-
-Quick smoke test from another terminal:
-
-```bash
-curl http://localhost:8080/businesses | head -c 300
+curl http://localhost:8080/health
 ```
 
 ---
 
-## 4. API Routes
+## 5. API
 
-Base URL: `http://localhost:8080`
+Base URL: `http://localhost:8080`. Every route is `GET` and returns JSON.
 
-### MS3 Query Routes (11)
+### Query routes
 
-Four complex queries marked with **★**.
+Complex queries are marked ★.
 
-| Method | Path | Query / Path Params | Notes |
-|---|---|---|---|
-| GET | `/businesses` | — | Open businesses in ZIP 19104 (Q1) |
-| GET | `/postal_code_stats` | — | Avg rating + count per ZIP (Q2) |
-| GET | `/city_business_stats` | — | Business count per city (Q3) |
-| GET | `/high_rated_with_housing`| `min_reviews` (default 50), `min_rating` (default 4.0, 0–5) | High-rated businesses + latest ZHVI (Q4) |
-| GET | `/business_review_stats` ★ | `page`, `limit` (default 50, max 500), `min_reviews` (default 50), `top_n` (default 5, 1–50) | Per-city top-N by reviews: CTE + 3 joins + `HAVING` + `RANK()`; paginated (Q5) |
-| GET | `/top_business_per_zip` ★ | `limit` (default 100, 1–1000) | Top business per ZIP via RANK() (Q6) |
-| GET | `/housing_trend/:postal_code` | `postal_code` (5-digit ZIP, required) | Full ZHVI time-series for a ZIP (Q7) |
-| GET | `/rating_vs_housing` ★ | — | Avg business rating vs latest ZHVI by ZIP (Q8) |
-| GET | `/zip_business_count` | — | Business count per ZIP + region info (Q9) |
-| GET | `/monthly_housing` | `postal_code` (5-digit ZIP, required) | Monthly avg ZHVI for a ZIP (Q10) |
-| GET | `/opportunity_score` ★ | `min_businesses` (default 10, 1–10000) | Neighborhood opportunity score (Q11) |
+| Path | Parameters | Returns |
+|---|---|---|
+| `/businesses` | `postal_code`, `city`, `state`, `min_stars` (0–5), `open_only` (default `true`), `page` (default 1), `limit` (default 100, max 1000) | `{ page, limit, rows }`, filters combined with AND, sorted by name |
+| `/postal_code_stats` | none | Average rating and business count per ZIP |
+| `/city_business_stats` | none | Business count per city |
+| `/high_rated_with_housing` ★ | `min_reviews` (default 50), `min_rating` (default 4.0) | Well-reviewed businesses with the latest home value of their ZIP |
+| `/business_review_stats` ★ | `min_reviews` (default 50), `top_n` (default 5, max 50), `page` (default 1), `limit` (default 50, max 500) | `{ page, limit, offset, min_reviews, top_n, rows }`, top N businesses per city by review count |
+| `/top_business_per_zip` ★ | `limit` (default 100, max 1000) | Most reviewed business of each ZIP |
+| `/housing_trend/:postal_code` | 5-digit ZIP | Home value time series |
+| `/rating_vs_housing` ★ | `min_businesses` (default 5) | Ratings against the latest home value, per ZIP |
+| `/zip_business_count` | none | Business count per ZIP with region details |
+| `/monthly_housing` | `postal_code` (required) | Monthly average home value |
+| `/opportunity_score` ★ | `min_businesses` (default 10) | Ratings, latest home value and home value growth, per ZIP |
 
-### Auxiliary Routes (3)
+### Lookup and service routes
 
-| Method | Path | Query / Path Params | Notes |
-|---|---|---|---|
-| GET | `/cities` | `state` (optional, 2-letter code) | Distinct cities for dropdowns |
-| GET | `/zip_codes` | `city` (optional) | Distinct ZIPs for dropdowns |
-| GET | `/business/:id` | `id` (business_id) | Full business detail + review summary; 404 if not found |
+| Path | Parameters | Returns |
+|---|---|---|
+| `/cities` | `state` (optional, 2 letters) | Distinct cities |
+| `/zip_codes` | `city` (optional) | Distinct ZIPs |
+| `/business/:id` | business id | Business details and review summary; 404 if unknown |
+| `/health` | none | `200 { status: "ok" }` when the database answers, `503` otherwise |
 
-### Example requests
+### Errors
 
-```bash
-# Housing trend for Philadelphia University City
-curl "http://localhost:8080/housing_trend/19104"
-
-# Top 5 most-reviewed business per ZIP
-curl "http://localhost:8080/top_business_per_zip?limit=5"
-
-# Review stats: top 3 per city (≥50 reviews), page 1
-curl "http://localhost:8080/business_review_stats?top_n=3&page=1&limit=20"
-
-# Opportunity score for ZIPs with ≥20 businesses
-curl "http://localhost:8080/opportunity_score?min_businesses=20"
-
-# Single business detail
-curl "http://localhost:8080/business/s55Hw6gHhQzZctinFhPu-g"
-```
-
----
-
-## 5. Error responses
-
-All routes return JSON with `{ "error": "..." }` on failure.
+Every failure is JSON of the form `{ "error": "..." }`.
 
 | Status | When |
 |---|---|
-| 400 | Missing/invalid params (ZIP not 5 digits, state not 2 letters, etc.) |
-| 404 | Resource not found (e.g. business id doesn't exist) |
-| 500 | Unexpected DB/server error |
-| 504 | Query timed out (>60s) — refine your filters |
+| 400 | Invalid input, for example a ZIP that is not 5 digits |
+| 404 | Unknown business id or unknown route |
+| 500 | Unexpected database or server error |
+| 503 | `/health` only: the database is unreachable |
+| 504 | The query exceeded the statement timeout |
+
+### Caching and compression
+
+The data is a static snapshot, so successful responses are kept in memory for `CACHE_TTL_MS` and reused. The `X-Cache` response header says `HIT` or `MISS`. The cache evicts the least recently used entries once it reaches `CACHE_MAX_ENTRIES` or `CACHE_MAX_BYTES`.
+
+Responses are gzip-compressed when the client accepts it. Each cached entry also keeps its gzip copy, so a hit sends stored bytes instead of compressing the same body again.
 
 ---
 
-## 6. Project structure
+## 6. Tests
+
+```bash
+npm test                # 100+ tests against a real PostgreSQL
+npm run test:coverage   # same, with coverage thresholds enforced
+```
+
+The suite needs no setup. It starts a throwaway PostgreSQL 17 from the binaries installed with the dev dependencies, loads a small deterministic dataset, builds the indexes and materialized views, and removes everything afterwards. To run against your own database instead, set `PGHOST` and the other `PG*` variables; CI does this with a service container.
+
+What is covered:
+
+- **Correctness.** Each endpoint is checked against values computed in plain JavaScript from the fixture rows.
+- **Equivalence.** The optimized queries are compared with the unoptimized handlers in `routes.js` and with the Milestone 4 SQL, so a rewrite cannot silently change results.
+- **Validation and injection.** Bad input gets a 400, numeric parameters are clamped, and quoted input cannot alter a query.
+- **Failure handling.** Timeouts map to 504, other database errors to 500, and driver messages never reach the client.
+- **Cache.** Expiry, eviction by count and by size, and that a repeated request does not reach the database.
+
+## 7. Benchmark
+
+```bash
+npm run bench                    # production row counts; several GB and 10 to 20 minutes
+BENCH_SCALE=0.05 npm run bench   # quick run on 5% of the data
+```
+
+The script generates a synthetic dataset with the production row counts and then measures, in order: the unoptimized handlers before any index or view exists; the Milestone 4 queries; the lookup endpoints before and after their indexes; every current handler; and the HTTP layer with the cache cold and warm. Results are written to `bench/results.json`. See the project README for the latest numbers.
+
+---
+
+## 8. Layout
 
 ```
 server/
-├── server.js            # Express app, route registration
-├── routes.js            # Route handlers + validation helpers
-├── config.json          # RDS credentials (gitignored)
-├── config.example.json  # Template
-├── package.json
-└── README.md
+├── server.js             entry point: listen and graceful shutdown
+├── app.js                builds the Express app (used by server.js and by tests)
+├── config.js             environment-first configuration
+├── db.js                 shared connection pool
+├── cache.js              in-memory response cache and its middleware
+├── routes_optimized.js   handlers used by the app
+├── routes.js             unoptimized handlers, kept as the benchmark and test baseline
+├── db/                   schema setup, SQL runner, local PostgreSQL for tests
+├── bench/                data generator and benchmark
+└── test/                 Jest suites, fixtures and helpers
 ```
