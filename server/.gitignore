@@ -3,3 +3,9 @@ config.json
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# local test database
+.pgdata-*/
+test/.test-db.json
+coverage/
+test/.tmp-*

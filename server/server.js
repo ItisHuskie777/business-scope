@@ -1,47 +1,24 @@
-const express = require('express');
-const cors = require('cors');
-const config = require('./config.json');
-const {
-  businesses,
-  postalCodeStats,
-  cityBusinessStats,
-  businessReviewStats,
-  highRatedWithHousing,
-  topBusinessPerZip,
-  housingTrend,
-  ratingVsHousing,
-  zipBusinessCount,
-  monthlyHousing,
-  opportunityScore,
-  cities,
-  zipCodes,
-  businessById,
-} = require('./routes_optimized');
+'use strict';
 
-const app = express();
-app.use(cors({
-  origin: '*',
-}));
+const { loadConfig } = require('./config');
+const { createApp } = require('./app');
+const pool = require('./db');
 
-// API endpoints
-app.get('/businesses', businesses);
-app.get('/postal_code_stats', postalCodeStats);
-app.get('/city_business_stats', cityBusinessStats);
-app.get('/business_review_stats', businessReviewStats);
-app.get('/high_rated_with_housing', highRatedWithHousing);
-app.get('/top_business_per_zip', topBusinessPerZip);
-app.get('/housing_trend/:postal_code', housingTrend);
-app.get('/rating_vs_housing', ratingVsHousing);
-app.get('/zip_business_count', zipBusinessCount);
-app.get('/monthly_housing', monthlyHousing);
-app.get('/opportunity_score', opportunityScore);
-app.get('/cities', cities);
-app.get('/zip_codes', zipCodes);
-app.get('/business/:id', businessById);
+const config = loadConfig();
+const app = createApp(config);
 
-
-app.listen(config.server_port, () => {
-  console.log(`Server running at http://${config.server_host}:${config.server_port}/`)
+const server = app.listen(config.server.port, () => {
+  console.log(`Server running at http://${config.server.host}:${config.server.port}/`);
 });
+
+// Finish in-flight requests and release database connections on shutdown.
+function shutdown(signal) {
+  console.log(`${signal} received, shutting down`);
+  server.close(() => {
+    pool.end().finally(() => process.exit(0));
+  });
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 module.exports = app;
