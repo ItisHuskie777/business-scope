@@ -52,6 +52,15 @@ Other scripts:
 | `npm run build`   | Production build into `dist/`   |
 | `npm run preview` | Serve the production build      |
 | `npm run lint`    | Run ESLint across the project   |
+| `npm test`        | Run the Vitest unit tests       |
+
+### Bundle layout
+
+Each page is loaded on demand with `React.lazy`, and third-party code is split
+into separate vendor chunks (`vite.config.js`). The first load downloads React,
+MUI and the page being visited; the data grid, the charts and the map are only
+fetched by the pages that use them. See the project README for the measured
+sizes.
 
 ---
 
@@ -59,13 +68,13 @@ Other scripts:
 
 ```
 client/
-├── index.html              # Vite entry with Google Fonts + Leaflet CSS
+├── index.html              # Vite entry with Google Fonts
 ├── vite.config.js
 ├── .env.development        # committed; VITE_API_URL default
 ├── .env.example            # template for .env.local overrides
 ├── src/
 │   ├── main.jsx            # ReactDOM root, Router, ThemeProvider, CssBaseline
-│   ├── App.jsx             # <Layout> + <Routes>
+│   ├── App.jsx             # <Layout> + lazily loaded <Routes>
 │   ├── theme.js            # MUI theme (palette, typography, shape)
 │   ├── index.css           # minimal base styles
 │   ├── api/
@@ -82,11 +91,11 @@ client/
 │   │   ├── HomePage.jsx               # landing page + city stats chart
 │   │   ├── BusinessExplorerPage.jsx   # filters + DataGrid (Colin)
 │   │   ├── BusinessDetailPage.jsx     # /business/:id + ZHVI chart
-│   │   ├── NeighborhoodsPage.jsx      # placeholder (Eitan)
-│   │   ├── MapPage.jsx                # placeholder (Zihan)
+│   │   ├── NeighborhoodsPage.jsx      # ZIP-level analytics (Eitan)
+│   │   ├── MapPage.jsx                # city map + top business per ZIP (Zihan)
 │   │   └── NotFoundPage.jsx
 │   └── utils/
-│       └── validation.js   # mirrors server isValidZip / STATE_RE
+│       └── validation.js   # mirrors server isValidZip / STATE_RE (tested in validation.test.js)
 ```
 
 ---
@@ -98,8 +107,8 @@ client/
 | `/`                       | `GET /city_business_stats`                                     |
 | `/businesses`             | `GET /businesses`, `GET /cities`, `GET /zip_codes`             |
 | `/business/:id`           | `GET /business/:id`, `GET /housing_trend/:postal_code`         |
-| `/neighborhoods`          | *(placeholder — Eitan will use opportunity_score, etc.)*       |
-| `/map`                    | *(placeholder — Zihan will use top_business_per_zip, etc.)*    |
+| `/neighborhoods`          | `GET /opportunity_score`, `GET /rating_vs_housing`, `GET /high_rated_with_housing`, `GET /business_review_stats` |
+| `/map`                    | `GET /city_business_stats`, `GET /top_business_per_zip`, `GET /housing_trend/:postal_code` |
 
 ---
 

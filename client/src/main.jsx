@@ -5,7 +5,6 @@ import { ThemeProvider } from "@mui/material/styles";
 import CssBaseline from "@mui/material/CssBaseline";
 import theme from "./theme.js";
 import App from "./App.jsx";
-import "leaflet/dist/leaflet.css";
 import "./index.css";
 
 createRoot(document.getElementById("root")).render(
