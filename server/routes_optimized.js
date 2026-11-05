@@ -2,23 +2,7 @@
 // CIS 5500 Final Project — OPTIMIZED route handlers
 // ============================================================================
 
-const { Pool, types } = require('pg');
-const config = require('./config.json');
-
-// Override the default parsing for BIGINT (PostgreSQL type ID 20)
-types.setTypeParser(20, val => parseInt(val, 10)); // DO NOT DELETE
-
-const pool = new Pool({
-  host: config.rds_host,
-  user: config.rds_user,
-  password: config.rds_password,
-  port: config.rds_port,
-  database: config.rds_db,
-  ssl: { rejectUnauthorized: false },
-  statement_timeout: 60000,
-  query_timeout: 60000,
-});
-pool.connect((err) => err && console.log(err));
+const pool = require('./db');
 
 
 // ============================================================
@@ -98,7 +82,7 @@ const businesses = async (req, res) => {
            stars, is_open, categories
     FROM business
     ${where}
-    ORDER BY name
+    ORDER BY name, business_id
     LIMIT ${limitParam} OFFSET ${offsetParam}
   `;
 
@@ -154,13 +138,18 @@ const cityBusinessStats = async (_req, res) => {
 // Baseline: 49.5 s  →  Optimized: 0.11 s  (445× speedup)
 // Optimizations: mv_business_review_summary replaces 5.1M-row review GROUP BY;
 //                CTE simplified; WHERE on indexed MV column instead of HAVING.
-// Query params: min_reviews (default 50), top_n (default 5),
-//               limit (default 50, max 500), offset (default 0)
+// Query params: min_reviews (default 50), top_n (default 5, max 50),
+//               page (1-indexed, default 1), limit (default 50, max 500).
+//               `offset` is still accepted and wins over `page` when given.
+// Response envelope: { page, limit, offset, min_reviews, top_n, rows: [...] }
 const businessReviewStats = async (req, res) => {
   const minReviews = clampInt(req.query.min_reviews, 50, 0, 100000);
-  const topN       = clampInt(req.query.top_n, 5, 1, 100);
+  const topN       = clampInt(req.query.top_n, 5, 1, 50);
   const limit      = clampInt(req.query.limit, 50, 1, 500);
-  const offset     = clampInt(req.query.offset, 0, 0, 1000000);
+  const page       = clampInt(req.query.page, 1, 1, 100000);
+  const offset     = req.query.offset !== undefined
+    ? clampInt(req.query.offset, 0, 0, 1000000)
+    : (page - 1) * limit;
 
   const text = `
     WITH review_agg AS (
@@ -189,13 +178,13 @@ const businessReviewStats = async (req, res) => {
            city_review_rank
     FROM ranked
     WHERE city_review_rank <= $2
-    ORDER BY city, city_review_rank, total_reviews DESC
+    ORDER BY city, city_review_rank, total_reviews DESC, business_id
     LIMIT $3 OFFSET $4
   `;
 
   try {
     const { rows } = await pool.query(text, [minReviews, topN, limit, offset]);
-    res.json({ minReviews, topN, limit, offset, rows });
+    res.json({ page, limit, offset, min_reviews: minReviews, top_n: topN, rows });
   } catch (err) {
     handleDbError(err, res, 'Failed to fetch business review stats');
   }
@@ -243,28 +232,23 @@ const highRatedWithHousing = async (req, res) => {
 
 
 // Route 6 (Complex): GET /top_business_per_zip   →  Q6 OPTIMIZED
-// Baseline: 30.2 s  →  Optimized: 0.47 s  (64× speedup)
-// Optimizations: LEFT JOIN mv_business_review_summary replaces GROUP BY review;
-//                COALESCE(review_count, 0) preserves businesses with no reviews;
-//                eliminates the 190 MB HashAggregate disk spill.
+// Baseline: 30.2 s  →  MV rewrite: 0.47 s  →  mv_top_business_per_zip: index read
+// Optimizations:
+//   - Step 1 (MS4): LEFT JOIN mv_business_review_summary replaces GROUP BY review
+//     and removes the 190 MB HashAggregate disk spill; COALESCE(review_count, 0)
+//     keeps businesses that were never reviewed.
+//   - Step 2: the per-ZIP ranking itself is precomputed in mv_top_business_per_zip
+//     (optimization/05_summary_materialized_views.sql). Its index is in the
+//     same order as this ORDER BY, so LIMIT n reads n index entries instead of
+//     ranking ~145k businesses per request.
 // Query params: limit (default 100)
 const topBusinessPerZip = async (req, res) => {
   const limit = clampInt(req.query.limit, 100, 1, 1000);
 
   const text = `
     SELECT postal_code, name, review_count
-    FROM (
-        SELECT b.postal_code,
-               b.name,
-               b.business_id,
-               COALESCE(brs.review_count, 0) AS review_count,
-               RANK() OVER (PARTITION BY b.postal_code
-                            ORDER BY COALESCE(brs.review_count, 0) DESC) AS rnk
-        FROM business b
-        LEFT JOIN mv_business_review_summary brs ON b.business_id = brs.business_id
-    ) t
-    WHERE rnk = 1
-    ORDER BY review_count DESC
+    FROM mv_top_business_per_zip
+    ORDER BY review_count DESC, postal_code, name
     LIMIT $1
   `;
 
@@ -299,31 +283,24 @@ const housingTrend = async (req, res) => {
 
 
 // Route 8 (Complex): GET /rating_vs_housing   →  Q8 OPTIMIZED
-// Baseline: 52.4 s  →  Optimized: 0.75 s  (70× speedup)
-// Optimizations: mv_business_review_summary + mv_latest_housing eliminate
-//                review-table scan; weighted-AVG rewrite —
-//                AVG(r.stars) becomes SUM(avg_per_business * count) / SUM(count),
-//                mathematically equivalent but avoids touching review entirely.
+// Baseline: 52.4 s  →  MV rewrite: 0.75 s  →  mv_zip_summary: single index range scan
+// Optimizations:
+//   - Step 1 (MS4): mv_business_review_summary + mv_latest_housing remove the
+//     review-table scan; AVG(r.stars) becomes a weighted average of the
+//     per-business averages, which is mathematically equivalent.
+//   - Step 2: the whole per-ZIP aggregate is precomputed in mv_zip_summary
+//     (optimization/05_summary_materialized_views.sql), so the request no longer joins
+//     four relations and groups ~145k rows; it filters ~4.7k precomputed rows.
 // Query params: min_businesses (default 5)
 const ratingVsHousing = async (req, res) => {
   const minBusinesses = clampInt(req.query.min_businesses, 5, 1, 1000);
 
   const text = `
-    SELECT b.postal_code,
-           z.city,
-           COUNT(DISTINCT b.business_id)                       AS business_count,
-           AVG(b.stars)                                        AS avg_business_rating,
-           SUM(brs.avg_review_stars * brs.review_count)
-             / NULLIF(SUM(brs.review_count), 0)                AS avg_review_rating,
-           SUM(brs.review_count)                               AS total_reviews,
-           lh.zhvi_value                                       AS latest_zhvi
-    FROM business b
-    JOIN mv_business_review_summary brs ON b.business_id = brs.business_id
-    JOIN zip_region z                   ON b.postal_code = z.postal_code
-    JOIN mv_latest_housing lh           ON b.postal_code = lh.postal_code
-    GROUP BY b.postal_code, z.city, lh.zhvi_value
-    HAVING COUNT(DISTINCT b.business_id) >= $1
-    ORDER BY lh.zhvi_value DESC
+    SELECT postal_code, city, business_count, avg_business_rating,
+           avg_review_rating, total_reviews, latest_zhvi
+    FROM mv_zip_summary
+    WHERE business_count >= $1
+    ORDER BY latest_zhvi DESC, postal_code
   `;
 
   try {
@@ -378,41 +355,29 @@ const monthlyHousing = async (req, res) => {
 
 
 // Route 11 (Complex): GET /opportunity_score   →  Q11 OPTIMIZED
-// Baseline: 46.0 s  →  Optimized: 1.14 s  (40× speedup)
+// Baseline: 46.0 s  →  MV rewrite: 1.14 s  →  mv_zip_summary: single index range scan
 // Optimizations:
-//   - Caching:       mv_business_review_summary + mv_latest_housing +
-//                    mv_oldest_housing replace TWO redundant housing_trend
-//                    full scans (InitPlan MIN/MAX).
-//   - Restructuring: weighted-AVG rewrite for review stars; merge-join via MV
-//                    unique indexes is preferred over hash-join.
-//   - Universal:     NOT EXISTS (zip_region with null region_name) — exclude
-//                    ZIPs lacking complete region metadata so the opportunity
-//                    score is only computed on data-quality-clean rows.
+//   - Step 1 (MS4): three MVs replace two redundant housing_trend full scans
+//     and the review aggregation.
+//   - Step 2: mv_zip_summary stores the finished per-ZIP aggregate, including
+//     the oldest ZHVI needed for growth.
+//   - Universal quantifier: the original NOT EXISTS (zip_region row with a NULL
+//     region_name) is the same as region_name IS NOT NULL here, because
+//     postal_code is the primary key of zip_region.
 // Query params: min_businesses (default 10)
 const opportunityScore = async (req, res) => {
   const minBusinesses = clampInt(req.query.min_businesses, 10, 1, 10000);
 
   const text = `
-    SELECT b.postal_code, z.city,
-           COUNT(DISTINCT b.business_id)                                AS business_count,
-           ROUND(AVG(b.stars)::numeric, 2)                              AS avg_business_stars,
-           ROUND((SUM(brs.avg_review_stars * brs.review_count)
-                  / NULLIF(SUM(brs.review_count), 0))::numeric, 2)      AS avg_review_stars,
-           MAX(lh.zhvi_value)                                           AS latest_zhvi,
-           ROUND((MAX(lh.zhvi_value) - MIN(oh.zhvi_value))::numeric, 2) AS zhvi_growth
-    FROM business b
-    JOIN mv_business_review_summary brs ON b.business_id = brs.business_id
-    JOIN zip_region z                   ON b.postal_code = z.postal_code
-    JOIN mv_latest_housing lh           ON b.postal_code = lh.postal_code
-    JOIN mv_oldest_housing oh           ON b.postal_code = oh.postal_code
-    WHERE NOT EXISTS (
-        SELECT 1 FROM zip_region z2
-        WHERE z2.postal_code = b.postal_code
-          AND z2.region_name IS NULL
-    )
-    GROUP BY b.postal_code, z.city
-    HAVING COUNT(DISTINCT b.business_id) >= $1
-    ORDER BY avg_review_stars DESC
+    SELECT postal_code, city, business_count,
+           ROUND(avg_business_rating::numeric, 2)           AS avg_business_stars,
+           ROUND(avg_review_rating::numeric, 2)             AS avg_review_stars,
+           latest_zhvi,
+           ROUND((latest_zhvi - oldest_zhvi)::numeric, 2)   AS zhvi_growth
+    FROM mv_zip_summary
+    WHERE business_count >= $1
+      AND region_name IS NOT NULL
+    ORDER BY avg_review_stars DESC, postal_code
   `;
 
   try {
@@ -425,7 +390,7 @@ const opportunityScore = async (req, res) => {
 
 
 // ============================================================
-// AUXILIARY ROUTES (unchanged)
+// AUXILIARY ROUTES
 // ============================================================
 
 
@@ -478,12 +443,11 @@ const businessById = async (req, res) => {
   const text = `
     SELECT b.business_id, b.name, b.address, b.city, b.state, b.postal_code,
            b.stars, b.is_open, b.categories, b.hours,
-           COUNT(r.review_id) AS total_reviews,
-           AVG(r.stars)       AS avg_review_stars
+           COALESCE(brs.review_count, 0) AS total_reviews,
+           brs.avg_review_stars          AS avg_review_stars
     FROM business b
-    LEFT JOIN review r ON b.business_id = r.business_id
+    LEFT JOIN mv_business_review_summary brs ON brs.business_id = b.business_id
     WHERE b.business_id = $1
-    GROUP BY b.business_id
   `;
   try {
     const { rows } = await pool.query(text, [id]);
