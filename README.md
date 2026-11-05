@@ -1,5 +1,7 @@
 # Business Scope: Neighborhood Business Opportunity Explorer
 
+[![CI](https://github.com/ItisHuskie777/business-scope/actions/workflows/ci.yml/badge.svg)](https://github.com/ItisHuskie777/business-scope/actions/workflows/ci.yml)
+
 CIS 5500 final project, Group 35.
 
 The application joins Yelp business and review data with Zillow home values so a user can compare neighborhoods as places to open a business: how businesses there are rated, how active reviewers are, and what housing costs and how it has moved.
