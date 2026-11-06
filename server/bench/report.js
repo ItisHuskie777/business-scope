@@ -62,6 +62,32 @@ out.push(table(
   Object.entries(r.http).map(([url, v]) => [`\`${url}\``, fmtMs(v.missMs), fmtMs(v.hitMsMedian), kb(v.rawBytes), kb(v.gzipBytes)])
 ));
 out.push('');
-out.push(`Building every index and materialized view took ${(r.buildCoreSeconds + r.buildLookupIndexSeconds).toFixed(0)} s; refreshing all five views took ${r.refreshAllSeconds.toFixed(1)} s.`);
+if (r.featuresBefore && r.featuresAfter) {
+  const pairs = [
+    [`Search, prefix ("${r.searchQueries.prefix}")`, 'search_prefix', 'search_prefix'],
+    [`Search, misspelled ("${r.searchQueries.typo}")`, 'search_typo', 'search_typo'],
+    ['Search, category word ("sushi")', 'search_category_word', 'search_category_word'],
+    ['Category counts, whole dataset', 'categories_live_split', 'categories_all'],
+    ['Reviews, first page', 'reviews_first_page', 'reviews_first_page'],
+    [`Reviews, page at row ${r.deepOffset.toLocaleString('en-US')} with OFFSET`, 'reviews_deep_offset', 'reviews_deep_offset'],
+    [`Reviews, page at row ${r.deepOffset.toLocaleString('en-US')} with the cursor`, 'reviews_deep_cursor', 'reviews_deep_cursor'],
+  ];
+  out.push(table(
+    ['New feature request', 'Without step 7', 'With step 7', 'Change'],
+    pairs.map(([label, before, after]) => [label, fmtMs(med('featuresBefore', before)), fmtMs(med('featuresAfter', after)), times(med('featuresBefore', before), med('featuresAfter', after))])
+  ));
+  out.push('');
+  out.push(table(
+    ['Other new endpoint', 'Time'],
+    [
+      ['`/categories?city=`', fmtMs(med('featuresAfter', 'categories_by_city'))],
+      ['`/business/:id/rating_trend` (most reviewed business)', fmtMs(med('featuresAfter', 'rating_trend'))],
+      ['`/compare` with 4 ZIPs', fmtMs(med('featuresAfter', 'compare_4_zips'))],
+    ]
+  ));
+  out.push('');
+}
+
+out.push(`Building every index and materialized view took ${(r.buildCoreSeconds + r.buildLookupIndexSeconds + (r.buildFeaturesSeconds || 0)).toFixed(0)} s; refreshing all seven views took ${r.refreshAllSeconds.toFixed(1)} s.`);
 
 console.log(out.join('\n'));

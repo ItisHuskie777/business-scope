@@ -20,6 +20,13 @@ function sizes(scale) {
 
 const STATES = "ARRAY['PA','FL','TN','AZ','IN','MO','LA','NJ','NV','CA','ID','DE','IL','AB']";
 
+// Names are built from word lists ("Golden Dragon Cafe"), so search has realistic
+// text to match, and some combinations repeat the way chains do.
+const NAME_A = "ARRAY['Golden','Blue','Green','Red','Silver','Little','Big','Old','New','Happy','Lucky','Royal','Urban','Sunny','Corner','Main Street','Harbor','Village','Pacific','Liberty']";
+const NAME_B = "ARRAY['Dragon','Oak','Lantern','Spoon','Fork','Barrel','Garden','Bridge','Anchor','Maple','Pine','Rose','Lion','Tiger','Owl','Fox','Bear','Bean','Leaf','Star']";
+const NAME_C = "ARRAY['Cafe','Bakery','Diner','Grill','Pizza','Tavern','Kitchen','Bistro','Salon','Market','Pharmacy','Bar','Taqueria','Sushi','Deli','Fitness','Books','Florist','Auto Repair','Dental']";
+const CATEGORIES = "ARRAY['Restaurants','Food','Shopping','Nightlife','Bars','Coffee & Tea','Cafes','Pizza','Mexican','Italian','Chinese','Japanese','Sushi Bars','Bakeries','Breakfast & Brunch','Sandwiches','Fast Food','Beauty & Spas','Hair Salons','Nail Salons','Health & Medical','Dentists','Automotive','Auto Repair','Fitness & Instruction','Gyms','Home Services','Grocery','Pharmacy','Event Planning & Services','Arts & Entertainment','Hotels & Travel','Pets','Local Services','Flowers & Gifts','Bookstores','Burgers','Seafood','Vegan','Desserts']";
+
 async function seed(client, scale = 1, log = () => {}) {
   const n = sizes(scale);
   await client.query('SELECT setseed(0.55)');
@@ -38,7 +45,8 @@ async function seed(client, scale = 1, log = () => {}) {
   await client.query(`
     INSERT INTO business
     SELECT 'b' || lpad(g::text, 9, '0'),
-           'Business ' || (g % 60000),
+           (${NAME_A})[1 + floor(random() * 20)::int] || ' ' || (${NAME_B})[1 + floor(random() * 20)::int]
+             || ' ' || (${NAME_C})[1 + floor(random() * 20)::int],
            (g % 9999) || ' Main St',
            'City ' || (z % 900),
            (${STATES})[1 + z % 14],
@@ -46,7 +54,13 @@ async function seed(client, scale = 1, log = () => {}) {
                 ELSE lpad((10000 + z)::text, 5, '0') END,
            (2 + floor(random() * 9)) / 2.0,
            (random() < 0.8)::int,
-           'Restaurants, Food', NULL
+           -- Two or three categories, skewed toward the common ones like the real data.
+           array_to_string(ARRAY[
+             (${CATEGORIES})[1 + floor(40 * power(random(), 2))::int],
+             (${CATEGORIES})[1 + floor(40 * power(random(), 2))::int],
+             CASE WHEN random() < 0.5 THEN (${CATEGORIES})[1 + floor(40 * random())::int] END
+           ], ', '),
+           NULL
     FROM (SELECT g, random() AS r, 1 + floor(${n.zips} * power(random(), 2))::int AS z
           FROM generate_series(1, ${n.businesses}) g) s`);
 

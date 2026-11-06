@@ -32,6 +32,9 @@ Configuration comes from environment variables. Nothing secret is stored in the 
 | `CACHE_MAX_BYTES` | `67108864` | Most bytes of responses kept in memory |
 | `PG_POOL_MAX` | `10` | Connection pool size |
 | `PG_STATEMENT_TIMEOUT_MS` | `60000` | Per-query timeout |
+| `RATE_LIMIT_PER_MINUTE` | `300` | Sustained requests per minute per client; `0` turns limiting off |
+| `RATE_LIMIT_BURST` | `60` | Requests a client may send at once |
+| `TRUST_PROXY` | `0` | Proxies in front of the API, so client addresses come from `X-Forwarded-For` |
 
 A git-ignored `config.json` in the course format (see `config.example.json`) is still read as a fallback. Environment variables take priority.
 
@@ -43,7 +46,7 @@ npm run db:schema     # create the four empty tables
 npm run db:derived    # build indexes and materialized views
 ```
 
-After reloading data, refresh the materialized views with `optimization/07_refresh_materialized_views.sql`.
+After reloading data, refresh the materialized views with `optimization/08_refresh_materialized_views.sql`. Step 7 needs the `pg_trgm` extension, which ships with PostgreSQL and is available on AWS RDS.
 
 ## 4. Start
 
@@ -56,7 +59,7 @@ curl http://localhost:8080/health
 
 ## 5. API
 
-Base URL: `http://localhost:8080`. Every route is `GET` and returns JSON.
+Base URL: `http://localhost:8080`. Every route is `GET` and returns JSON. The full machine-readable description is served at **`/openapi.json`** (OpenAPI 3.1); a test fails if a route is added without being documented there.
 
 ### Query routes
 
@@ -64,7 +67,7 @@ Complex queries are marked ★.
 
 | Path | Parameters | Returns |
 |---|---|---|
-| `/businesses` | `postal_code`, `city`, `state`, `min_stars` (0–5), `open_only` (default `true`), `page` (default 1), `limit` (default 100, max 1000) | `{ page, limit, rows }`, filters combined with AND, sorted by name |
+| `/businesses` | `postal_code`, `city`, `state`, `min_stars` (0–5), `category`, `open_only` (default `true`), `page` (default 1), `limit` (default 100, max 1000) | `{ page, limit, rows }`, filters combined with AND, sorted by name |
 | `/postal_code_stats` | none | Average rating and business count per ZIP |
 | `/city_business_stats` | none | Business count per city |
 | `/high_rated_with_housing` ★ | `min_reviews` (default 50), `min_rating` (default 4.0) | Well-reviewed businesses with the latest home value of their ZIP |
@@ -76,6 +79,18 @@ Complex queries are marked ★.
 | `/monthly_housing` | `postal_code` (required) | Monthly average home value |
 | `/opportunity_score` ★ | `min_businesses` (default 10) | Ratings, latest home value and home value growth, per ZIP |
 
+### Search, categories, reviews and comparison
+
+| Path | Parameters | Returns |
+|---|---|---|
+| `/search` | `q` (2–100 characters, required), `limit` (default 10, max 50), `city`, `state` | `{ q, rows }`, best match first. Matches partial names ("starb"), misspelled names ("starbuks") and category words with stemming ("bakery" finds "Bakeries") |
+| `/categories` | `city`, `state`, `min_businesses` (default 1), `limit` (default 20, max 500) | Categories with business count, average stars and total reviews, most common first |
+| `/business/:id/reviews` | `limit` (default 20, max 100), `cursor`, `stars` (1–5) | `{ rows, next_cursor }`, newest first. Pass `next_cursor` back to get the next page; it is `null` on the last page |
+| `/business/:id/rating_trend` | business id | Average stars and review count per month, oldest first |
+| `/compare` | `zips`: 2 to 4 ZIP codes, comma-separated | `{ zips }` in the order requested: businesses, ratings, reviews, latest home value, change over a year, top 5 categories. An unknown ZIP comes back with `found: false` |
+
+The review feed pages with a cursor rather than `OFFSET`. The cursor encodes the date and id of the last review returned, and an index stores each business's reviews in that order, so a page deep in the feed costs the same as the first one.
+
 ### Lookup and service routes
 
 | Path | Parameters | Returns |
@@ -84,6 +99,7 @@ Complex queries are marked ★.
 | `/zip_codes` | `city` (optional) | Distinct ZIPs |
 | `/business/:id` | business id | Business details and review summary; 404 if unknown |
 | `/health` | none | `200 { status: "ok" }` when the database answers, `503` otherwise |
+| `/openapi.json` | none | OpenAPI 3.1 description of every route |
 
 ### Errors
 
@@ -93,9 +109,18 @@ Every failure is JSON of the form `{ "error": "..." }`.
 |---|---|
 | 400 | Invalid input, for example a ZIP that is not 5 digits |
 | 404 | Unknown business id or unknown route |
+| 429 | Rate limit exceeded; `Retry-After` says how many seconds to wait |
 | 500 | Unexpected database or server error |
 | 503 | `/health` only: the database is unreachable |
 | 504 | The query exceeded the statement timeout |
+
+### Rate limiting
+
+Each client address has a token bucket: it may send `RATE_LIMIT_BURST` requests at once, refilled at `RATE_LIMIT_PER_MINUTE`. Responses carry `RateLimit-Limit` and `RateLimit-Remaining`. `/health` is exempt. Cached responses count too, so the cache cannot be used to get around the limit. Behind a load balancer, set `TRUST_PROXY` or every client shares one bucket.
+
+### Dates
+
+Dates are returned exactly as stored: `YYYY-MM-DD` for dates and `YYYY-MM-DDTHH:MM:SS` for timestamps, with no time zone conversion.
 
 ### Caching and compression
 
@@ -108,7 +133,7 @@ Responses are gzip-compressed when the client accepts it. Each cached entry also
 ## 6. Tests
 
 ```bash
-npm test                # 100+ tests against a real PostgreSQL
+npm test                # 185 tests against a real PostgreSQL
 npm run test:coverage   # same, with coverage thresholds enforced
 ```
 
@@ -121,6 +146,10 @@ What is covered:
 - **Validation and injection.** Bad input gets a 400, numeric parameters are clamped, and quoted input cannot alter a query.
 - **Failure handling.** Timeouts map to 504, other database errors to 500, and driver messages never reach the client.
 - **Cache.** Expiry, eviction by count and by size, and that a repeated request does not reach the database.
+- **New features.** Search by prefix, typo and category; category counts; walking the whole review feed by cursor, including undated reviews and ties on date; monthly rating trend; ZIP comparison, including unknown ZIPs and ZIPs without housing data.
+- **Rate limiting.** Bursts, refill, `Retry-After`, per-client buckets and bounded memory.
+- **API description.** Every route the app serves is in `/openapi.json` and every schema reference resolves.
+- **Time zones.** The suite runs in `Asia/Tokyo`, so a date that shifts with the server's time zone fails here and in CI.
 
 ## 7. Benchmark
 
@@ -142,7 +171,11 @@ server/
 ├── config.js             environment-first configuration
 ├── db.js                 shared connection pool
 ├── cache.js              in-memory response cache and its middleware
-├── routes_optimized.js   handlers used by the app
+├── routes_optimized.js   handlers for the original endpoints
+├── routes_features.js    search, categories, review feed, rating trend, comparison
+├── validation.js         input helpers shared by the route modules
+├── rateLimit.js          token-bucket rate limiter and its middleware
+├── openapi.js            OpenAPI 3.1 description, served at /openapi.json
 ├── routes.js             unoptimized handlers, kept as the benchmark and test baseline
 ├── db/                   schema setup, SQL runner, local PostgreSQL for tests
 ├── bench/                data generator and benchmark

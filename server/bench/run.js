@@ -42,7 +42,11 @@ function httpGet(port, url, gzip) {
     const req = http.get({ host: '127.0.0.1', port, path: url, headers: gzip ? { 'accept-encoding': 'gzip' } : {} }, (res) => {
       const chunks = [];
       res.on('data', (c) => chunks.push(c));
-      res.on('end', () => resolve({ ms: ms(start), bytes: Buffer.concat(chunks).length, cache: res.headers['x-cache'], status: res.statusCode }));
+      res.on('end', () => {
+        // A refused or failed request would make the numbers meaningless; stop instead.
+        if (res.statusCode !== 200) return reject(new Error(`${url} answered ${res.statusCode}`));
+        return resolve({ ms: ms(start), bytes: Buffer.concat(chunks).length, cache: res.headers['x-cache'], status: res.statusCode });
+      });
     });
     req.on('error', reject);
   });
@@ -149,6 +153,67 @@ function httpGet(port, url, gzip) {
     await runSqlFile(client, setup.LOOKUP_INDEXES);
     results.buildLookupIndexSeconds = ms(t) / 1000;
 
+    // ---- 3b. Search, categories and the review feed, before and after step 7 --
+    // pg_trgm must exist for the search operators; its indexes come with step 7.
+    await client.query('CREATE EXTENSION IF NOT EXISTS pg_trgm');
+    const feats = require('../routes_features');
+    const topId = top.business_id;
+    // How far into the most reviewed business's feed to page (20,000 reviews at full scale).
+    const DEEP = Math.max(20, Math.min(20000, Math.floor(top.n * 0.8)));
+    const offsetPage = (offset) => asBody(pool.query(`
+      SELECT review_id, stars, review_date FROM review WHERE business_id = $1
+      ORDER BY COALESCE(review_date, '-infinity'::timestamp) DESC, review_id DESC
+      OFFSET $2 LIMIT 20`, [topId, offset]));
+    // The cursor a client would hold after paging DEEP rows into the feed.
+    const deepRow = (await client.query(`
+      SELECT COALESCE(review_date, '-infinity'::timestamp)::text AS sort_key, review_id FROM review
+      WHERE business_id = $1
+      ORDER BY COALESCE(review_date, '-infinity'::timestamp) DESC, review_id DESC OFFSET $2 LIMIT 1`, [topId, DEEP - 1])).rows[0];
+    const deepCursor = feats.encodeCursor(deepRow);
+    const liveCategorySplit = () => asBody(pool.query(`
+      SELECT btrim(c) AS category, COUNT(DISTINCT b.business_id) AS n
+      FROM business b CROSS JOIN LATERAL unnest(string_to_array(b.categories, ',')) c
+      WHERE btrim(c) <> '' GROUP BY 1 ORDER BY n DESC LIMIT 20`));
+    const searchName = (await client.query('SELECT name FROM business ORDER BY business_id LIMIT 1 OFFSET 777')).rows[0].name;
+    const typo = searchName.replace(/(\s\w)\w(\w+)$/, '$1$2');   // drop the second letter of the last word: "Books" -> "Boks"
+    results.searchQueries = { prefix: searchName.slice(0, 9), typo };
+    const featureCases = {
+      search_prefix: () => callHandler(feats.search, { query: { q: searchName.slice(0, 9), limit: '10' } }),
+      search_typo: () => callHandler(feats.search, { query: { q: typo, limit: '10' } }),
+      search_category_word: () => callHandler(feats.search, { query: { q: 'sushi', limit: '10' } }),
+      reviews_first_page: () => callHandler(feats.businessReviews, { params: { id: topId }, query: { limit: '20' } }),
+      reviews_deep_offset: () => offsetPage(DEEP),
+      reviews_deep_cursor: () => callHandler(feats.businessReviews, { params: { id: topId }, query: { limit: '20', cursor: deepCursor } }),
+    };
+    log('timing search and the review feed WITHOUT step 7 indexes');
+    results.featuresBefore = {};
+    for (const [name, fn] of Object.entries(featureCases)) {
+      results.featuresBefore[name] = await bench(fn, RUNS);
+      log(`  ${name}: ${results.featuresBefore[name].median.toFixed(2)} ms (${results.featuresBefore[name].rows} rows)`);
+    }
+    results.featuresBefore.categories_live_split = await bench(liveCategorySplit, RUNS);
+    log(`  categories_live_split: ${results.featuresBefore.categories_live_split.median.toFixed(2)} ms`);
+
+    t = process.hrtime.bigint();
+    await runSqlFile(client, setup.FEATURES);
+    results.buildFeaturesSeconds = ms(t) / 1000;
+    log(`step 7 built in ${results.buildFeaturesSeconds.toFixed(0)} s`);
+
+    log('timing search, categories, the review feed and compare WITH step 7');
+    const zipsToCompare = (await client.query('SELECT postal_code FROM mv_zip_summary ORDER BY business_count DESC LIMIT 4')).rows.map((r) => r.postal_code).join(',');
+    Object.assign(featureCases, {
+      categories_all: () => callHandler(feats.categories, { query: {} }),
+      categories_by_city: () => callHandler(feats.categories, { query: { city: 'City 14' } }),
+      rating_trend: () => callHandler(feats.ratingTrend, { params: { id: topId } }),
+      compare_4_zips: () => callHandler(feats.compare, { query: { zips: zipsToCompare } }),
+    });
+    results.featuresAfter = {};
+    for (const [name, fn] of Object.entries(featureCases)) {
+      results.featuresAfter[name] = await bench(fn, RUNS);
+      log(`  ${name}: ${results.featuresAfter[name].median.toFixed(2)} ms (${results.featuresAfter[name].rows} rows)`);
+    }
+    results.deepOffset = DEEP;
+
     // ---- 4. Current code ------------------------------------------------------
     log('timing CURRENT handlers');
     const cases = {
@@ -189,7 +254,8 @@ function httpGet(port, url, gzip) {
   // ---- 5. HTTP layer: response cache and gzip ----------------------------------
   log('HTTP layer: cache miss vs hit, raw vs gzip payload');
   const config = loadConfig();
-  const app = createApp({ ...config, cache: { ...config.cache, ttlMs: 600000 } });
+  // Rate limiting off: the benchmark sends far more requests than one client normally would.
+  const app = createApp({ ...config, cache: { ...config.cache, ttlMs: 600000 }, rateLimit: { perMinute: 0, burst: 0 } });
   const httpServer = await new Promise((resolve) => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
   const port = httpServer.address().port;
   results.http = {};
