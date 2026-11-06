@@ -12,6 +12,7 @@ import {
 import StorefrontIcon from "@mui/icons-material/Storefront";
 import LocationCityIcon from "@mui/icons-material/LocationCity";
 import MapIcon from "@mui/icons-material/Map";
+import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
 import { Link } from "react-router-dom";
 import {
   BarChart,
@@ -23,7 +24,7 @@ import {
   CartesianGrid,
 } from "recharts";
 import useApi from "../hooks/useApi.js";
-import { getCityBusinessStats } from "../api/client.js";
+import { getCategories, getCityBusinessStats } from "../api/client.js";
 import LoadingState from "../components/LoadingState.jsx";
 import ErrorState from "../components/ErrorState.jsx";
 
@@ -43,6 +44,13 @@ const FEATURES = [
     icon: <LocationCityIcon fontSize="large" />,
   },
   {
+    to: "/compare",
+    title: "Compare Neighborhoods",
+    description:
+      "Put up to four ZIP codes side by side: businesses, ratings, home values and top categories.",
+    icon: <CompareArrowsIcon fontSize="large" />,
+  },
+  {
     to: "/map",
     title: "Map & Recommendations",
     description:
@@ -53,6 +61,12 @@ const FEATURES = [
 
 export default function HomePage() {
   const { data, loading, error, refetch } = useApi(getCityBusinessStats, []);
+  const categories = useApi(() => getCategories({ limit: 10 }), []);
+  const topCategories = (categories.data || []).map((row) => ({
+    category: row.category,
+    businesses: row.business_count,
+    stars: Number(row.avg_stars),
+  }));
 
   const top = (data || []).slice(0, 10).map((row) => ({
     city: row.city,
@@ -121,13 +135,42 @@ export default function HomePage() {
         )}
       </Paper>
 
+      <Paper sx={{ p: { xs: 2, md: 3 } }}>
+        <Stack direction="row" spacing={1} alignItems="baseline" mb={1}>
+          <Typography variant="h3">Most common categories</Typography>
+          <Typography variant="body2" color="text.secondary">
+            live from /categories
+          </Typography>
+        </Stack>
+        {categories.loading && <LoadingState label="Fetching categories…" />}
+        {categories.error && <ErrorState error={categories.error} onRetry={categories.refetch} />}
+        {!categories.loading && !categories.error && (
+          <Box sx={{ width: "100%", height: 360 }} data-testid="category-chart">
+            <ResponsiveContainer>
+              <BarChart data={topCategories} layout="vertical" margin={{ top: 8, right: 24, left: 24, bottom: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E4E9EE" />
+                <XAxis type="number" tick={{ fontSize: 12 }} />
+                <YAxis type="category" dataKey="category" width={140} tick={{ fontSize: 12 }} />
+                <Tooltip
+                  formatter={(value, _name, item) => [
+                    `${value.toLocaleString()} businesses, ${item.payload.stars.toFixed(2)}★ average`,
+                    item.payload.category,
+                  ]}
+                />
+                <Bar dataKey="businesses" fill="#2A9D8F" radius={[0, 6, 6, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </Box>
+        )}
+      </Paper>
+
       <Box>
         <Typography variant="h3" gutterBottom>
           Features
         </Typography>
         <Grid container spacing={2}>
           {FEATURES.map((f) => (
-            <Grid key={f.to} item xs={12} md={4}>
+            <Grid key={f.to} item xs={12} sm={6} md={3}>
               <Card sx={{ height: "100%" }}>
                 <CardActionArea component={Link} to={f.to} sx={{ height: "100%" }}>
                   <CardContent sx={{ p: 3 }}>

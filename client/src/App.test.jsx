@@ -57,6 +57,11 @@ vi.mock("./api/client.js", () => {
       if (id === "missing") throw new ApiError("Business not found", 404);
       return api.business;
     }),
+    searchBusinesses: vi.fn(async () => ({ q: "", rows: [] })),
+    getCategories: vi.fn(async () => [{ category: "Cafes", business_count: 12, avg_stars: "4.10", total_reviews: 300 }]),
+    getBusinessReviews: vi.fn(async () => ({ rows: [], next_cursor: null })),
+    getRatingTrend: vi.fn(async () => []),
+    compareZips: vi.fn(async () => ({ zips: [] })),
   };
 });
 
@@ -103,6 +108,7 @@ describe("lazy-loaded routes", () => {
     ["/businesses", "Business Explorer"],
     ["/neighborhoods", "Neighborhood Analytics"],
     ["/map", "Map & Recommendations"],
+    ["/compare", "Compare neighborhoods"],
     ["/no-such-page", "Page not found"],
   ])("%s renders its page", async (path, heading) => {
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});

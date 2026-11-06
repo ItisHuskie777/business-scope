@@ -17,6 +17,7 @@ import { useNavigate } from "react-router-dom";
 import useApi from "../hooks/useApi.js";
 import {
   getBusinesses,
+  getCategories,
   getCities,
   getZipCodes,
 } from "../api/client.js";
@@ -43,6 +44,7 @@ export default function BusinessExplorerPage() {
   const [city, setCity] = useState("Philadelphia");
   const [zip, setZip] = useState("");
   const [minStars, setMinStars] = useState(0);
+  const [category, setCategory] = useState("");
   const [openOnly, setOpenOnly] = useState(true);
 
   const { data: citiesData } = useApi(
@@ -52,6 +54,16 @@ export default function BusinessExplorerPage() {
   const { data: zipsData } = useApi(
     () => getZipCodes(city || undefined),
     [city]
+  );
+  // Categories present in the selected area, most common first.
+  const { data: categoriesData } = useApi(
+    () =>
+      getCategories({
+        state: stateCode || undefined,
+        city: city || undefined,
+        limit: 300,
+      }),
+    [stateCode, city]
   );
   const cities = citiesData ?? [];
   const zips = zipsData ?? [];
@@ -68,10 +80,11 @@ export default function BusinessExplorerPage() {
         city: city || undefined,
         postal_code: zip || undefined,
         min_stars: minStars > 0 ? minStars : undefined,
+        category: category || undefined,
         open_only: openOnly,
         limit: 500,
       }),
-    [stateCode, city, zip, minStars, openOnly]
+    [stateCode, city, zip, minStars, category, openOnly]
   );
 
   const rows = useMemo(() => {
@@ -122,14 +135,18 @@ export default function BusinessExplorerPage() {
 
   const cityOptions = cities.map((c) => c.city);
   const zipOptions = zips.map((z) => z.postal_code);
+  const categoryCounts = Object.fromEntries(
+    (categoriesData ?? []).map((c) => [c.category, c.business_count])
+  );
+  const categoryOptions = Object.keys(categoryCounts);
 
   return (
     <Stack spacing={3}>
       <Box>
         <Typography variant="h2">Business Explorer</Typography>
         <Typography color="text.secondary">
-          Search the full 145K-business Yelp dataset by state, city, ZIP and
-          rating. Click any row to open the detail page.
+          Filter the full 145K-business Yelp dataset by state, city, ZIP,
+          category and rating. Click any row to open the detail page.
         </Typography>
       </Box>
 
@@ -149,7 +166,7 @@ export default function BusinessExplorerPage() {
               )}
             />
           </Grid>
-          <Grid item xs={12} sm={6} md={3}>
+          <Grid item xs={12} sm={6} md={2}>
             <Autocomplete
               options={cityOptions}
               value={city || null}
@@ -172,7 +189,28 @@ export default function BusinessExplorerPage() {
               )}
             />
           </Grid>
-          <Grid item xs={12} sm={6} md={3}>
+          <Grid item xs={12} sm={6} md={2}>
+            <Autocomplete
+              options={categoryOptions}
+              value={category || null}
+              onChange={(_, v) => setCategory(v || "")}
+              renderOption={(props, option) => {
+                const { key, ...rest } = props;
+                return (
+                  <Box component="li" key={key} {...rest} sx={{ display: "flex", justifyContent: "space-between", gap: 1 }}>
+                    <span>{option}</span>
+                    <Typography variant="caption" color="text.secondary">
+                      {categoryCounts[option]}
+                    </Typography>
+                  </Box>
+                );
+              }}
+              renderInput={(params) => (
+                <TextField {...params} label="Category" size="small" />
+              )}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6} md={2}>
             <Box sx={{ px: 1 }}>
               <Typography variant="caption" color="text.secondary">
                 Minimum stars: {minStars.toFixed(1)}

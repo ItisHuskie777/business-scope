@@ -51,6 +51,7 @@ api.interceptors.response.use(
  * @param {string} [opts.city]
  * @param {string} [opts.state]       2-letter code, case-insensitive
  * @param {number} [opts.min_stars]   0–5
+ * @param {string} [opts.category]    exact category name (see getCategories)
  * @param {boolean}[opts.open_only=true]
  * @param {number} [opts.page=1]
  * @param {number} [opts.limit=100]   max 1000
@@ -65,6 +66,7 @@ export const getBusinesses = ({
   city,
   state,
   min_stars,
+  category,
   open_only,
   page = 1,
   limit = 100,
@@ -76,6 +78,7 @@ export const getBusinesses = ({
         city,
         state,
         min_stars,
+        category,
         open_only: open_only === false ? "false" : undefined,
         page,
         limit,
@@ -236,3 +239,61 @@ export const getZipCodes = (city) =>
  */
 export const getBusinessById = (id) =>
   api.get(`/business/${encodeURIComponent(id)}`).then((r) => r.data);
+
+// ---------------------------------------------------------------------------
+// Search, categories, review feed, rating trend, comparison
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /search  —  businesses whose name or categories match `q`; tolerates
+ * typos and partial words. Pass an AbortSignal to cancel a superseded request.
+ * @param {string} q  2–100 characters
+ * @param {{limit?:number, city?:string, state?:string, signal?:AbortSignal}} [opts]
+ * @returns {Promise<{q:string, rows:Array<{business_id:string,name:string,city:string,state:string,postal_code:string,stars:string,categories:string|null,score:string}>}>}
+ */
+export const searchBusinesses = (q, { limit = 8, city, state, signal } = {}) =>
+  api
+    .get("/search", { params: { q, limit, city, state }, signal })
+    .then((r) => r.data);
+
+/**
+ * GET /categories  —  categories by number of businesses, dataset-wide or for a city/state.
+ * @param {{city?:string, state?:string, limit?:number, min_businesses?:number}} [opts]
+ * @returns {Promise<Array<{category:string,business_count:number,avg_stars:string,total_reviews:number}>>}
+ */
+export const getCategories = ({ city, state, limit = 20, min_businesses } = {}) =>
+  api
+    .get("/categories", { params: { city, state, limit, min_businesses } })
+    .then((r) => r.data);
+
+/**
+ * GET /business/:id/reviews  —  newest first, one page at a time.
+ * Pass the previous response's next_cursor to get the following page.
+ * @param {string} id
+ * @param {{cursor?:string, stars?:number, limit?:number}} [opts]
+ * @returns {Promise<{rows:Array<{review_id:string,stars:string,useful:number,funny:number,cool:number,text:string,review_date:string|null}>, next_cursor:string|null}>}
+ */
+export const getBusinessReviews = (id, { cursor, stars, limit = 10 } = {}) =>
+  api
+    .get(`/business/${encodeURIComponent(id)}/reviews`, {
+      params: { cursor, stars, limit },
+    })
+    .then((r) => r.data);
+
+/**
+ * GET /business/:id/rating_trend  —  average stars and review count per month.
+ * @param {string} id
+ * @returns {Promise<Array<{month:string, review_count:number, avg_stars:string}>>}
+ */
+export const getRatingTrend = (id) =>
+  api
+    .get(`/business/${encodeURIComponent(id)}/rating_trend`)
+    .then((r) => r.data);
+
+/**
+ * GET /compare  —  side-by-side profile of 2–4 ZIP codes, in the order given.
+ * @param {string[]} zips
+ * @returns {Promise<{zips:Array<Object>}>}
+ */
+export const compareZips = (zips) =>
+  api.get("/compare", { params: { zips: zips.join(",") } }).then((r) => r.data);

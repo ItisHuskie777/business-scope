@@ -21,6 +21,8 @@ import {
 } from "recharts";
 import useApi from "../hooks/useApi.js";
 import { getBusinessById, getHousingTrend } from "../api/client.js";
+import RatingTrendChart from "../components/RatingTrendChart.jsx";
+import ReviewFeed from "../components/ReviewFeed.jsx";
 import { isValidZip } from "../utils/validation.js";
 import LoadingState from "../components/LoadingState.jsx";
 import ErrorState from "../components/ErrorState.jsx";
@@ -232,6 +234,20 @@ export default function BusinessDetailPage() {
             </ResponsiveContainer>
           </Box>
         )}
+      </Paper>
+
+      <Paper sx={{ p: { xs: 2, md: 3 } }}>
+        <Stack direction="row" spacing={1} alignItems="baseline" mb={1}>
+          <Typography variant="h3">Rating over time</Typography>
+          <Typography variant="body2" color="text.secondary">
+            average stars and number of reviews per month
+          </Typography>
+        </Stack>
+        <RatingTrendChart businessId={business.business_id} />
+      </Paper>
+
+      <Paper sx={{ p: { xs: 2, md: 3 } }}>
+        <ReviewFeed businessId={business.business_id} />
       </Paper>
     </Stack>
   );

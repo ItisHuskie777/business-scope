@@ -11,6 +11,7 @@ const BusinessExplorerPage = lazy(() => import("./pages/BusinessExplorerPage.jsx
 const BusinessDetailPage = lazy(() => import("./pages/BusinessDetailPage.jsx"));
 const NeighborhoodsPage = lazy(() => import("./pages/NeighborhoodsPage.jsx"));
 const MapPage = lazy(() => import("./pages/MapPage.jsx"));
+const ComparePage = lazy(() => import("./pages/ComparePage.jsx"));
 const NotFoundPage = lazy(() => import("./pages/NotFoundPage.jsx"));
 
 export default function App() {
@@ -22,6 +23,7 @@ export default function App() {
           <Route path="/businesses" element={<BusinessExplorerPage />} />
           <Route path="/business/:id" element={<BusinessDetailPage />} />
           <Route path="/neighborhoods" element={<NeighborhoodsPage />} />
+          <Route path="/compare" element={<ComparePage />} />
           <Route path="/map" element={<MapPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>

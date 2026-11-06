@@ -81,21 +81,27 @@ client/
 │   │   └── client.js       # axios instance + 14 route wrappers + ApiError
 │   ├── components/
 │   │   ├── Layout.jsx      # AppBar + main container + footer
-│   │   ├── NavBar.jsx      # top nav with active-link styling
+│   │   ├── NavBar.jsx      # top nav with active-link styling and the search box
+│   │   ├── SearchBox.jsx   # debounced, cancellable business search
+│   │   ├── ReviewFeed.jsx  # cursor-paged reviews with a star filter
+│   │   ├── RatingTrendChart.jsx # average stars and review count per month
 │   │   ├── LoadingState.jsx
 │   │   ├── ErrorState.jsx  # renders ApiError with status-aware titles
 │   │   └── StarRating.jsx  # read-only star display
 │   ├── hooks/
-│   │   └── useApi.js       # {data, loading, error, refetch}
+│   │   ├── useApi.js       # {data, loading, error, refetch}
+│   │   └── useDebouncedValue.js
 │   ├── pages/
 │   │   ├── HomePage.jsx               # landing page + city stats chart
 │   │   ├── BusinessExplorerPage.jsx   # filters + DataGrid (Colin)
 │   │   ├── BusinessDetailPage.jsx     # /business/:id + ZHVI chart
 │   │   ├── NeighborhoodsPage.jsx      # ZIP-level analytics (Eitan)
+│   │   ├── ComparePage.jsx            # 2–4 ZIP codes side by side, state in the URL
 │   │   ├── MapPage.jsx                # city map + top business per ZIP (Zihan)
 │   │   └── NotFoundPage.jsx
 │   └── utils/
-│       └── validation.js   # mirrors server isValidZip / STATE_RE (tested in validation.test.js)
+│       ├── validation.js   # mirrors server isValidZip / STATE_RE (tested in validation.test.js)
+│       └── zipList.js      # compare page URL parsing and chart series merging
 ```
 
 ---
@@ -104,9 +110,11 @@ client/
 
 | Page                      | Routes consumed                                               |
 |---------------------------|----------------------------------------------------------------|
-| `/`                       | `GET /city_business_stats`                                     |
-| `/businesses`             | `GET /businesses`, `GET /cities`, `GET /zip_codes`             |
-| `/business/:id`           | `GET /business/:id`, `GET /housing_trend/:postal_code`         |
+| every page (search box)   | `GET /search`                                                  |
+| `/`                       | `GET /city_business_stats`, `GET /categories`                  |
+| `/businesses`             | `GET /businesses`, `GET /cities`, `GET /zip_codes`, `GET /categories` |
+| `/business/:id`           | `GET /business/:id`, `GET /housing_trend/:postal_code`, `GET /business/:id/rating_trend`, `GET /business/:id/reviews` |
+| `/compare`                | `GET /compare`, `GET /zip_codes`, `GET /housing_trend/:postal_code` |
 | `/neighborhoods`          | `GET /opportunity_score`, `GET /rating_vs_housing`, `GET /high_rated_with_housing`, `GET /business_review_stats` |
 | `/map`                    | `GET /city_business_stats`, `GET /top_business_per_zip`, `GET /housing_trend/:postal_code` |
 

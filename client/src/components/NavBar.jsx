@@ -8,11 +8,13 @@ import {
 } from "@mui/material";
 import StoreMallDirectoryIcon from "@mui/icons-material/StoreMallDirectory";
 import { NavLink, Link } from "react-router-dom";
+import SearchBox from "./SearchBox.jsx";
 
 const LINKS = [
   { to: "/", label: "Home", end: true },
   { to: "/businesses", label: "Business Explorer" },
   { to: "/neighborhoods", label: "Neighborhoods" },
+  { to: "/compare", label: "Compare" },
   { to: "/map", label: "Map" },
 ];
 
@@ -20,7 +22,7 @@ export default function NavBar() {
   return (
     <AppBar position="sticky" color="primary" elevation={0}>
       <Container maxWidth="xl" disableGutters>
-        <Toolbar sx={{ gap: 2, px: { xs: 2, md: 3 } }}>
+        <Toolbar sx={{ gap: 2, px: { xs: 2, md: 3 }, py: { xs: 1, md: 0 }, flexWrap: "wrap" }}>
           <Box
             component={Link}
             to="/"
@@ -36,15 +38,10 @@ export default function NavBar() {
             <Typography variant="h6" component="span" sx={{ fontWeight: 700 }}>
               Business Scope
             </Typography>
-            <Typography
-              variant="body2"
-              sx={{ ml: 1, opacity: 0.8, display: { xs: "none", md: "block" } }}
-            >
-              Business Scope
-            </Typography>
           </Box>
+          <SearchBox />
           <Box sx={{ flexGrow: 1 }} />
-          <Box sx={{ display: "flex", gap: 0.5 }}>
+          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
             {LINKS.map((link) => (
               <Button
                 key={link.to}
