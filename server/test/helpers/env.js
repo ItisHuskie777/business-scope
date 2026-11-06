@@ -14,3 +14,7 @@ process.env.PGUSER = connection.user;
 process.env.PGPASSWORD = connection.password;
 process.env.PGDATABASE = connection.database;
 process.env.PGSSL = 'false';
+
+// Run the tests east of UTC. Date handling that depends on the server's time
+// zone then fails here (and in CI, which runs in UTC) instead of in production.
+process.env.TZ = 'Asia/Tokyo';

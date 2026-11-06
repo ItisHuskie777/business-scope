@@ -8,6 +8,13 @@ const { loadConfig } = require('./config');
 // BIGINT (OID 20) arrives as a string by default; counts here fit in a JS number.
 types.setTypeParser(20, (val) => parseInt(val, 10));
 
+// DATE (1082) and TIMESTAMP WITHOUT TIME ZONE (1114) carry no time zone. By
+// default the driver turns them into JavaScript Dates at local midnight, so on a
+// server east of UTC every date serializes as the previous day. Return them as
+// the ISO 8601 text PostgreSQL stored instead.
+types.setTypeParser(1082, (val) => val);
+types.setTypeParser(1114, (val) => val.replace(' ', 'T'));
+
 const { db } = loadConfig();
 
 const pool = new Pool({

@@ -103,6 +103,14 @@ describe('housing endpoints', () => {
     expect(dates).toEqual([...dates].sort());
   });
 
+  test('GET /housing_trend/:zip returns the stored dates exactly, whatever the server time zone', async () => {
+    // Regression: dates used to become local-midnight Dates, which serialize as
+    // the previous day on a server east of UTC (the test process runs in Asia/Tokyo).
+    const res = await get('/housing_trend/19104');
+    const expected = housingByZip['19104'].map((h) => h.trend_date).sort();
+    expect(res.body.map((r) => r.trend_date)).toEqual(expected);
+  });
+
   test('GET /housing_trend/:zip is an empty list for a ZIP without data', async () => {
     const res = await get(`/housing_trend/${ZIP_WITHOUT_HOUSING}`);
     expect(res.status).toBe(200);
