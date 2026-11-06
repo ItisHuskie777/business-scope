@@ -25,6 +25,12 @@ const QUERY_ROUTES = [
   '/zip_codes',
   '/zip_codes?city=Tampa',
   '/business/biz_00_00',
+  '/search?q=starb',
+  '/categories',
+  '/categories?city=Tampa',
+  '/business/biz_00_00/reviews',
+  '/business/biz_00_00/rating_trend',
+  '/compare?zips=19104,19103',
 ];
 
 describe('database failures', () => {
@@ -49,7 +55,7 @@ describe('database failures', () => {
     querySpy = jest.spyOn(pool, 'query').mockRejectedValue(new Error('connection refused'));
     const res = await request(app).get(url);
     expect(res.status).toBe(500);
-    expect(res.body.error).toMatch(/^Failed to fetch/);
+    expect(res.body.error).toMatch(/^Failed to /);
     // The driver's message must not leak to the client.
     expect(JSON.stringify(res.body)).not.toMatch(/connection refused/);
   });

@@ -7,14 +7,20 @@ const express = require('express');
 const cors = require('cors');
 const compression = require('compression');
 const { TtlCache, cacheMiddleware } = require('./cache');
+const { TokenBucketLimiter, rateLimitMiddleware } = require('./rateLimit');
 const routes = require('./routes_optimized');
+const features = require('./routes_features');
+const openapi = require('./openapi');
 const pool = require('./db');
 
 function createApp(config) {
   const app = express();
   const cache = new TtlCache(config.cache);
+  const limiter = new TokenBucketLimiter(config.rateLimit || { perMinute: 0, burst: 0 });
 
   app.disable('x-powered-by');
+  // Behind a proxy, req.ip must come from X-Forwarded-For or every client shares one bucket.
+  app.set('trust proxy', config.trustProxy || 0);
   app.use(cors({ origin: config.corsOrigin }));
   // Several endpoints return thousands of rows; gzip cuts those payloads by roughly 10x.
   app.use(compression());
@@ -28,6 +34,11 @@ function createApp(config) {
       res.status(503).json({ status: 'unavailable', error: 'database unreachable' });
     }
   });
+
+  // Health checks come from the platform, not from users, so they are never limited.
+  app.use(rateLimitMiddleware(limiter, { exempt: ['/health'] }));
+
+  app.get('/openapi.json', (_req, res) => res.json(openapi));
 
   app.use(cacheMiddleware(cache));
 
@@ -46,6 +57,12 @@ function createApp(config) {
   app.get('/zip_codes', routes.zipCodes);
   app.get('/business/:id', routes.businessById);
 
+  app.get('/search', features.search);
+  app.get('/categories', features.categories);
+  app.get('/business/:id/reviews', features.businessReviews);
+  app.get('/business/:id/rating_trend', features.ratingTrend);
+  app.get('/compare', features.compare);
+
   app.use((_req, res) => {
     res.status(404).json({ error: 'Route not found' });
   });
@@ -61,6 +78,7 @@ function createApp(config) {
   });
 
   app.locals.cache = cache;
+  app.locals.limiter = limiter;
   return app;
 }
 

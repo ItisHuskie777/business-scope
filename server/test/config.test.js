@@ -36,6 +36,14 @@ describe('loadConfig', () => {
     expect(loadConfig({ PGPASSWORD: '' }, { rds_password: 'file-pass' }).db.password).toBe('');
   });
 
+  test('rate limiting and proxy trust are tunable, and on by default', () => {
+    expect(loadConfig({}, {}).rateLimit).toEqual({ perMinute: 300, burst: 60 });
+    expect(loadConfig({}, {}).trustProxy).toBe(0);
+    const config = loadConfig({ RATE_LIMIT_PER_MINUTE: '0', RATE_LIMIT_BURST: '5', TRUST_PROXY: '1' }, {});
+    expect(config.rateLimit).toEqual({ perMinute: 0, burst: 5 });
+    expect(config.trustProxy).toBe(1);
+  });
+
   test('cache and pool settings are tunable', () => {
     const config = loadConfig({ CACHE_TTL_MS: '0', CACHE_MAX_ENTRIES: '10', CACHE_MAX_BYTES: '2048', PG_POOL_MAX: '4', PG_STATEMENT_TIMEOUT_MS: '1500' }, {});
     expect(config.cache).toEqual({ ttlMs: 0, maxEntries: 10, maxBytes: 2048 });

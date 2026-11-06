@@ -53,6 +53,14 @@ function loadConfig(env = process.env, file = readFileConfig()) {
       maxBytes: toInt(env.CACHE_MAX_BYTES, 64 * 1024 * 1024),
     },
     corsOrigin: env.CORS_ORIGIN || '*',
+    rateLimit: {
+      // Sustained requests per minute per client, and how many may arrive at once. 0 turns it off.
+      perMinute: toInt(env.RATE_LIMIT_PER_MINUTE, 300),
+      burst: toInt(env.RATE_LIMIT_BURST, 60),
+    },
+    // Number of proxies in front of the API (for example 1 behind a load balancer),
+    // so the client address comes from X-Forwarded-For. 0 trusts no proxy.
+    trustProxy: toInt(env.TRUST_PROXY, 0),
   };
 }
 

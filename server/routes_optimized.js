@@ -5,34 +5,7 @@
 const pool = require('./db');
 
 
-// ============================================================
-// VALIDATION HELPERS
-// ============================================================
-
-const ZIP_RE = /^\d{5}$/;
-const STATE_RE = /^[A-Za-z]{2}$/;
-
-const isValidZip = (zip) => typeof zip === 'string' && ZIP_RE.test(zip);
-
-const clampInt = (raw, fallback, min, max) => {
-  const n = parseInt(raw, 10);
-  if (Number.isNaN(n)) return fallback;
-  return Math.min(Math.max(n, min), max);
-};
-
-const clampFloat = (raw, fallback, min, max) => {
-  const n = parseFloat(raw);
-  if (Number.isNaN(n)) return fallback;
-  return Math.min(Math.max(n, min), max);
-};
-
-const handleDbError = (err, res, fallbackMsg) => {
-  console.error(err);
-  if (err && err.code === '57014') {
-    return res.status(504).json({ error: 'Query timed out — please refine your filters' });
-  }
-  res.status(500).json({ error: fallbackMsg });
-};
+const { STATE_RE, isValidZip, clampInt, clampFloat, handleDbError } = require('./validation');
 
 
 // ============================================================
@@ -46,12 +19,13 @@ const handleDbError = (err, res, fallbackMsg) => {
 //   city         city name (case-sensitive)
 //   state        2-letter US state code
 //   min_stars    minimum stars (0–5)
+//   category     exact category name, e.g. "Pizza" (see /categories)
 //   open_only    "true" (default) | "false"
 //   limit        rows per page (default 100, max 1000)
 //   page         1-indexed page (default 1)
 // Response envelope: { page, limit, rows: [...] }
 const businesses = async (req, res) => {
-  const { postal_code, city, state } = req.query;
+  const { postal_code, city, state, category } = req.query;
   const openOnly = req.query.open_only !== 'false';
   const minStars = clampFloat(req.query.min_stars, 0, 0, 5);
   const limit = clampInt(req.query.limit, 100, 1, 1000);
@@ -72,6 +46,11 @@ const businesses = async (req, res) => {
   if (state)       { params.push(state.toUpperCase());   conditions.push(`state = $${params.length}`); }
   if (openOnly)    { conditions.push(`is_open = 1`); }
   if (minStars > 0){ params.push(minStars);              conditions.push(`stars >= $${params.length}`); }
+  if (typeof category === 'string' && category.trim()) {
+    params.push(category.trim());
+    conditions.push(`EXISTS (SELECT 1 FROM mv_business_category bc
+                             WHERE bc.business_id = business.business_id AND bc.category = $${params.length})`);
+  }
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   params.push(limit);  const limitParam = `$${params.length}`;

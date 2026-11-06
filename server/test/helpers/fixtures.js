@@ -8,6 +8,7 @@
 //   - a ZIP with no housing data    (no ZHVI; absent from the per-ZIP analytics)
 //   - businesses in a ZIP that zip_region does not list
 //   - a business with no reviews, closed businesses, and repeated names
+//   - reviews without a date, and many reviews sharing a date
 
 function mulberry32(seed) {
   let a = seed >>> 0;
@@ -83,6 +84,8 @@ function build() {
         text: 'Synthetic review text.',
         review_date: `2023-${String(int(1, 12)).padStart(2, '0')}-${String(int(1, 28)).padStart(2, '0')}T12:00:00`,
       });
+      // Two reviews of the first business have no date: the review feed must still page through them.
+      if (b.business_id === 'biz_00_00' && k < 2) review[review.length - 1].review_date = null;
     }
   });
 

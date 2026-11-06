@@ -40,7 +40,11 @@
       "config.js",
       "db.js",
       "routes_optimized.js",
-      "db/runSql.js"
+      "db/runSql.js",
+      "routes_features.js",
+      "rateLimit.js",
+      "validation.js",
+      "openapi.js"
     ],
     "coverageThreshold": {
       "global": {
